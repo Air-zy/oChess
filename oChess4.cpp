@@ -119,6 +119,7 @@ class PieceCache {
   const std::string KNIGHT_UNICODE = "\xE2\x99\x9E";
   const std::string PAWN_UNICODE = "\xE2\x99\x99";
   const std::string EMPTY_STRING = " ";
+  const std::string UNKNOWN_TYPE = "?";
 
  public:
   // last three bit represent piece type
@@ -162,6 +163,8 @@ class PieceCache {
 
   const std::string getPieceTypeUnicode(const unsigned char pieceType) const {
     switch (pieceType) {
+      case 0:
+        return EMPTY_STRING;
       case 1:
         return PAWN_UNICODE;
       case 2:
@@ -175,7 +178,7 @@ class PieceCache {
       case 6:
         return KING_UNICODE;
       default:
-        return " ";
+        return UNKNOWN_TYPE;
     }
     return 0;
   }
@@ -216,6 +219,7 @@ class Move {
   // 16bit move value          ffffttttttssssss;
   unsigned short moveValue = 0b0000000000000000;
   unsigned char flag() const { return moveValue >> 12; };
+
  public:
   unsigned char moveFrom() const { return moveValue & moveFlags.fromTileMask; };
   unsigned char moveTo() const {
@@ -517,6 +521,49 @@ class PreComputedCache {
         }
       }
 
+      // king
+      // kings
+
+      // up
+      if (row < 7) {
+        kingMoves[i][0] = Move(i, i + 8);
+      }
+
+      // down
+      if (row > 0) {
+        kingMoves[i][1] = Move(i, i - 8);
+      }
+
+      // right
+      if (col > 0) {
+        kingMoves[i][2] = Move(i, i - 1);
+      }
+
+      // left
+      if (col < 7) {
+        kingMoves[i][3] = Move(i, i + 1);
+      }
+
+      // top right
+      if (col > 0 && row < 7) {
+        kingMoves[i][4] = Move(i, i + 7);
+      }
+
+      // top left
+      if (col < 7 && row < 7) {
+        kingMoves[i][5] = Move(i, i + 9);
+      }
+
+      // bottom right
+      if (col > 0 && row > 0) {
+        kingMoves[i][6] = Move(i, i - 9);
+      }
+
+      // bottom left
+      if (col < 7 && row > 0) {
+        kingMoves[i][7] = Move(i, i - 7);
+      }
+      
     }
   };
 };
@@ -571,9 +618,45 @@ class pieceList {
     amt = 0;
   }
 
-  pieceList() {
-    clear();
-  };
+  pieceList() { clear(); };
+};
+
+// optimized stack for chess
+class gameStateStack {
+ private:
+  unsigned short gameStateHistory[200] = {0b0000000000000000};  // Array to hold game states
+  int top;
+
+ public:
+  gameStateStack() : top(-1) {}
+
+  bool isEmpty() { return top == -1; }
+
+  bool isFull() { return top == 200 - 1; }
+
+  void push(unsigned short gameState) {
+    if (isFull()) {
+      //std::cout << "Stack Overflow\n";
+      return;
+    }
+    gameStateHistory[++top] = gameState;
+  }
+
+  unsigned short pop() {
+    if (isEmpty()) {
+      //std::cout << "Stack Underflow\n";
+      return 0;  // Returning 0 as error value
+    }
+    return gameStateHistory[top--];
+  }
+
+  unsigned short peek() {
+    if (isEmpty()) {
+      //std::cout << "Stack is empty\n";
+      return 0;  // Returning 0 as error value
+    }
+    return gameStateHistory[top];
+  }
 };
 
 class Board {
@@ -585,6 +668,7 @@ class Board {
   // Total plies (half-moves) played in game
   int plyCount = 0;
   int turn = pieces.WHITE;
+  int oppTurn = pieces.BLACK; // opposite of turn
 
   // stack like lists for faster move gen, one for black, one for white
   pieceList pawns[2];
@@ -598,8 +682,9 @@ class Board {
   // Bits 4-7 store file of ep square (starting at 1, so 0 = no ep square)
   // Bits 8-13 captured piece
   // Bits 14-... fifty mover counter
-  unsigned short gameState[200] = {0b0000000000000000};
-  
+  gameStateStack gameStateHistory;
+  unsigned short currentGameState = 0b0000000000000000;
+
   // bitboards
   BitBoard allPieces;
 
@@ -607,6 +692,12 @@ class Board {
   int board[64];
 
   void resetValues() {
+    gameStateStack newGameHistory;
+    unsigned short initialGameState = 0b0000000000000000;
+    currentGameState = initialGameState;
+    gameStateHistory = newGameHistory;
+    gameStateHistory.push(initialGameState);
+
     for (int i = 0; i < 64; ++i) {
       board[i] = pieces.EMPTY;
     };
@@ -761,7 +852,7 @@ class Board {
     }
   };
 
-  void display(bool whiteSide, BitBoard highlights, std::string line1 = " ",
+  void display(bool whiteSide, BitBoard &highlights, std::string line1 = " ",
                std::string line2 = " ", std::string line3 = " ",
                std::string line4 = " ") const {
     for (int i = 0; i < 64; ++i) {
@@ -795,10 +886,13 @@ class Board {
         setTxtColor(chessCache.greyLetCol);
         if (chessCache.preComputedRows[i] == 0) {
           if (turn) {  // if blacks turn
-            std::cout << "  turn: b";
+            std::cout << "  turn: b,";
           } else {
-            std::cout << "  turn: w";
+            std::cout << "  turn: w,";
           }
+          std::cout << "  ply: " << plyCount
+                    << ",  wking: " << intToString(whiteKing)
+                    << ",  bking: " << intToString(blackKing);
         } else if (chessCache.preComputedRows[i] == 1) {
           std::cout << line1;
         } else if (chessCache.preComputedRows[i] == 2) {
@@ -818,6 +912,7 @@ class Board {
   };
 
   void makeTurn() {
+    oppTurn = turn;
     if (turn) {  // if blacks turn
       turn = pieces.WHITE;
     } else {
@@ -832,8 +927,10 @@ class Board {
     return (board[m.moveTo()] != pieces.EMPTY);
   };
 
-  void addLegal(moveList& m, const Move &move) const {
-    if (board[move.moveTo()] == pieces.EMPTY || pieces.color(board[move.moveFrom()]) != pieces.color(board[move.moveTo()])) {
+  void addLegal(moveList &m, const Move &move) const {
+    if (board[move.moveTo()] == pieces.EMPTY ||
+        pieces.color(board[move.moveFrom()]) !=
+            pieces.color(board[move.moveTo()])) {
       m.addConstMove(move);
     }
   };
@@ -886,7 +983,7 @@ class Board {
     }
   };
 
-    // manually written/hard coded for less looping, so its a bit faster
+  // manually written/hard coded for less looping, so its a bit faster
   void generateBishopMoves(moveList &m) const {
     if (turn == pieces.WHITE) {
       for (int i = 0; i < bishops[1].amt; ++i) {
@@ -1002,15 +1099,31 @@ class Board {
     }
   };
 
+  // manually written/hard coded for less looping, so its a bit faster
+  void generateKingMoves(moveList &m) const {
+    if (turn == pieces.WHITE) {
+      for (int j = 0; j < 8; ++j) {
+        Move addingMove = chessCache.kingMoves[whiteKing][j];
+        addLegal(m, addingMove);
+      }
+    } else {
+      for (int j = 0; j < 8; ++j) {
+        Move addingMove = chessCache.kingMoves[blackKing][j];
+        addLegal(m, addingMove);
+      }
+    }
+  };
+
   void generateMoves(moveList &moves) const {
     generatePawnMoves(moves);
     generateKnightMoves(moves);
     generateBishopMoves(moves);
     generateRookMoves(moves);
-
+    generateKingMoves(moves);
   };
 
   void makeMove(Move &m) {
+    currentGameState = 0;
     int startSquare = m.moveFrom();
     int targetSquare = m.moveTo();
 
@@ -1067,7 +1180,7 @@ class Board {
     allPieces.setSquare(targetSquare);
     allPieces.unSetSquare(startSquare);
 
-    gameState[plyCount] |= (pieces.type(board[targetSquare]) << 8);
+    currentGameState |= (pieces.type(board[targetSquare]) << 8);
 
     board[targetSquare] = board[startSquare];
     board[startSquare] = pieces.EMPTY;
@@ -1076,15 +1189,15 @@ class Board {
     ++plyCount;
   };
 
-  void unMakeMove(Move& m) {
+  void unMakeMove(Move &m) {
     --plyCount;
     int startSquare = m.moveFrom();
     int targetSquare = m.moveTo();
 
-    unsigned char capturedPieceType = (gameState[plyCount] >> 8) & 63;  // 63 = 111111
+    unsigned char capturedPieceType = (currentGameState >> 8) & 63;  // 63 = 111111
     unsigned char capturedPiece = pieces.EMPTY;
     if (capturedPieceType != pieces.EMPTY) {
-      capturedPiece = capturedPieceType|turn;
+      capturedPiece = capturedPieceType | turn;
     };
 
     // moving
@@ -1117,10 +1230,33 @@ class Board {
     allPieces.setSquare(startSquare);
     if (capturedPiece == pieces.EMPTY) {
       allPieces.unSetSquare(targetSquare);
-    }
+    } else if (capturedPiece == pieces.BPAWN) {
+      pawns[0].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.WPAWN) {
+      pawns[1].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.BKNIGHT) {
+      knights[0].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.WKNIGHT) {
+      knights[1].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.BBISHOP) {
+      bishops[0].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.WBISHOP) {
+      bishops[1].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.BROOK) {
+      rooks[0].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.WROOK) {
+      rooks[1].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.BQUEEN) {
+      queens[0].addAtTile(targetSquare);
+    } else if (capturedPiece == pieces.WQUEEN) {
+      queens[1].addAtTile(targetSquare);
+    } 
 
     board[startSquare] = board[targetSquare];
     board[targetSquare] = capturedPiece;
+
+    gameStateHistory.pop(); // removes current state from history
+    currentGameState = gameStateHistory.peek(); // sets current state to previous state in history
 
     makeTurn();
   }
@@ -1132,12 +1268,62 @@ class Board {
   Board(std::string fen) { setupFen(fen); };
 };
 
+struct PREFTData {
+  long numPos = 0;
+ // int captures = 0;
+};
+
+
+BitBoard cBoardHLight;
+PREFTData PERFT(Board &chessBoard, int depth) {
+  if (depth == 0) {
+    PREFTData newData;
+    newData.numPos = 1;
+    return newData;
+  }
+  PREFTData newData;
+
+  moveList genMoves;
+  chessBoard.generateMoves(genMoves);
+  for (unsigned char i = 0; i < genMoves.amt; ++i) {
+    chessBoard.makeMove(genMoves.moves[i]);
+
+    //system("CLS");
+    //chessBoard.display(false, cBoardHLight);
+
+    PREFTData branchData = PERFT(chessBoard, depth - 1);
+    // newData.captures += branchData.captures;
+    newData.numPos += branchData.numPos;
+    chessBoard.unMakeMove(genMoves.moves[i]);
+  }
+  return newData;
+}
+
+void perftTest(Board &chessBoard) {
+  std::cout << "\nstarting PREFT\n";
+  auto startstart = std::chrono::steady_clock::now();
+  for (int d = 0; d < 10; d++) {
+    auto start = std::chrono::steady_clock::now();
+    PREFTData finaldata = PERFT(chessBoard, d);
+    auto endt = std::chrono::steady_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
+    std::cout << "depth: " << d << " ply  ";
+    std::cout << "result: " << finaldata.numPos << " nodes  ";
+    std::cout << "Time: " << duration << " ms\n";
+  }
+  auto endendt = std::chrono::steady_clock::now();
+  auto totalDuraction = std::chrono::duration_cast<std::chrono::milliseconds>(endendt - startstart).count();
+  std::cout << "total time: " << totalDuraction << "ms\n\n";
+  system("PAUSE"); 
+};
+
 void startGame(Board &chessBoard) {
   BitBoard cBoardHLight;
   Move previousMoves[200];
   std::string input = " ";
 
-  int chessBoardPly = 0; // amt of chess movse
+  int chessBoardPly = 0;  // amt of chess movse
   int moveFrom = 0;
   int moveTo = 0;
 
@@ -1219,11 +1405,10 @@ int main() {
 
   do {
     system("CLS");
-    std::cout << " "
-              << pieces.getPieceTypeUnicode(1) << " CHESS MENU "
+    std::cout << " " << pieces.getPieceTypeUnicode(1) << " CHESS MENU "
               << pieces.getPieceTypeUnicode(1);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V4.2"; // VERSION
+    std::cout << " V4.3";  // VERSION
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
@@ -1235,8 +1420,7 @@ int main() {
     setTxtColor(chessCache.greyLetCol);
     std::cout << " (starting position) ";
     setTxtColor(15);
-    std::cout << "\n[e] Exit"
-              << '\n';
+    std::cout << "\n[e] Exit" << '\n';
 
     std::cin >> input;
     input = toLowercase(input);
@@ -1245,6 +1429,7 @@ int main() {
       startGame(chessBoard);
     } else if (input == "t") {
       // perft test
+      perftTest(chessBoard);
     } else if (input == "f") {
       chessBoard.setupFen(getFen());
       std::cout << "\n\n";
