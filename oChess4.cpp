@@ -13,7 +13,7 @@ Description(I.P.O):
         -
 
 Assumptions:
-    - using char variable type for smaller memmory / so my laptop doesnt get
+    - using smaller variable types like char/short instead of int to save memmory
 angry
     - using ++i pre-increment insted of post-increment i++ in loops for bit
 faster loops
@@ -41,6 +41,13 @@ SOURCES:
 #include <iostream>
 
 void setTxtColor(int colorValue);
+
+void printShortBinary(short num) {
+  for (int i = sizeof(num) * 8 - 1; i >= 0; --i) {
+    std::cout << ((num >> i) & 1);
+    if (i % 4 == 0) std::cout << " ";
+  }
+}
 
 std::string intToString(int num) {
   std::string result;
@@ -195,18 +202,18 @@ struct MoveCache {
   const unsigned short flagMask = 0b1111000000000000;
 
   // Flags
-  const int NoFlag = 0b0000;                // 0
-  const int EnPassantCaptureFlag = 0b0001;  // 1
-  const int CastleFlag = 0b0010;            // 2
-  const int PawnTwoUpFlag = 0b0011;         // 3
+  const unsigned char NoFlag = 0b0000;                // 0
+  const unsigned char EnPassantCaptureFlag = 0b0001;  // 1
+  const unsigned char CastleFlag = 0b0010;            // 2
+  const unsigned char PawnTwoUpFlag = 0b0011;         // 3
 
-  const int PromoteToQueenFlag = 0b0100;   // 4
-  const int PromoteToKnightFlag = 0b0101;  // 5
-  const int PromoteToRookFlag = 0b0110;    // 6
-  const int PromoteToBishopFlag = 0b0111;  // 7
+  const unsigned char PromoteToQueenFlag = 0b0100;   // 4
+  const unsigned char PromoteToKnightFlag = 0b0101;  // 5
+  const unsigned char PromoteToRookFlag = 0b0110;    // 6
+  const unsigned char PromoteToBishopFlag = 0b0111;  // 7
 
   // other
-  const unsigned short Null = 0;
+  const unsigned short Null = 0b0000000000000000;
 };
 
 const MoveCache moveFlags;
@@ -229,6 +236,7 @@ class Move {
   };
 
   bool isNull() const { return moveValue == moveFlags.Null; };
+  bool isCastling() const { return flag() == moveFlags.CastleFlag; };
   bool promoteQueen() const { return flag() == moveFlags.PromoteToQueenFlag; };
   bool promoteRook() const { return flag() == moveFlags.PromoteToRookFlag; };
   bool promoteBishop() const { return flag() == moveFlags.PromoteToBishopFlag; };
@@ -291,10 +299,29 @@ class PreComputedCache {
   Move bishopMoves[4][64][7];  // 13 max, 4 directions, 7 moves max in each direction
   Move rookMoves[4][64][7];  // 14 max, 4 directions, 7 moves max in each direction
 
+  // castling
   Move whiteKingSideCastle;
   Move whiteQueenSideCastle;
   Move blackKingSideCastle;
   Move blackQueenSideCastle;
+
+  // normal rook tiles
+  const unsigned char whiteKingRook = 7;
+  const unsigned char whiteQueenRook = 0;
+  const unsigned char blackKingRook = 63;
+  const unsigned char blackQueenRook = 56;
+
+  // castled rook tiles
+  const unsigned char whiteKingRookCastleTo = 5;
+  const unsigned char whiteQueenRookCastleTo = 3;
+  const unsigned char blackKingRookCastleTo = 61;
+  const unsigned char blackQueenRookCastleTo = 59;
+
+  // castled king tiles
+  const unsigned char whiteKingCastleTo = 6;
+  const unsigned char whiteQueenCastleTo = 2;
+  const unsigned char blackKingCastleTo = 62;
+  const unsigned char blackQueenCastleTo = 58;
 
   unsigned char notationToTile(std::string notation) const {
     int fileNum =
@@ -312,7 +339,13 @@ class PreComputedCache {
 
   PreComputedCache() {
     int dfar = 0;
-    //
+    // pre compute moves
+
+    whiteKingSideCastle = Move(4, whiteKingCastleTo, moveFlags.CastleFlag);
+    whiteQueenSideCastle = Move(4, whiteQueenCastleTo, moveFlags.CastleFlag);
+    blackKingSideCastle = Move(60, blackKingCastleTo, moveFlags.CastleFlag);
+    blackQueenSideCastle = Move(60, blackQueenCastleTo, moveFlags.CastleFlag);
+
     for (int i = 0; i < 64; ++i) {
       unsigned char row = (i / 8);
       unsigned char col = (i % 8);
@@ -598,7 +631,7 @@ struct moveList {
   Move moves[218];  // 218 max moves in chess
   unsigned char amt = 0;
 
-  void addConstMove(const Move m) {
+  void addConstMove(const Move &m) {
     if (!m.isNull()) {
       moves[amt] = m;
       ++amt;
@@ -611,7 +644,7 @@ class pieceList {
   int pieceMap[64] = {0};  // to keep track of where pieces are
  public:
   int pieces[10] = {0};  // 10 possible of the same piece in chess
-  unsigned char amt = 0;
+  int amt = 0;
 
   void addAtTile(int tile) {
     pieces[amt] = tile;
@@ -623,7 +656,13 @@ class pieceList {
     int pieceIndex = pieceMap[tile];
     pieces[pieceIndex] = pieces[amt - 1];
     pieceMap[pieces[pieceIndex]] = pieceIndex;
-    --amt;
+    if (amt < 0) {
+      std::cout << '\n' << amt << ", invalid amt for pieceList ";
+      system("PAUSE");
+    }
+    if (amt > 0) {
+      --amt;
+    }
   };
 
   void MovePiece(int startSquare, int targetSquare) {
@@ -684,6 +723,20 @@ class gameStateStack {
 
 class Board {
  private:
+  // consts
+  const unsigned short whiteCastleKingsideMask  = 0b1111111111111110;
+  const unsigned short whiteCastleQueensideMask = 0b1111111111111101;
+  const unsigned short blackCastleKingsideMask  = 0b1111111111111011;
+  const unsigned short blackCastleQueensideMask = 0b1111111111110111;
+
+  const unsigned short whiteCastleKingsideBit  = 0b0000000000000001;
+  const unsigned short whiteCastleQueensideBit = 0b0000000000000010;
+  const unsigned short blackCastleKingsideBit  = 0b0000000000000100;
+  const unsigned short blackCastleQueensideBit = 0b0000000000001000;
+
+  const unsigned short whiteCastleMask = whiteCastleKingsideMask & whiteCastleQueensideMask;
+  const unsigned short blackCastleMask = blackCastleKingsideMask & blackCastleQueensideMask;
+
   // index position of the kings
   unsigned char whiteKing = 0;
   unsigned char blackKing = 0;
@@ -691,7 +744,7 @@ class Board {
   // Total plies (half-moves) played in game
   int plyCount = 0;
   int turn = pieces.WHITE;
-  int oppTurn = pieces.BLACK; // opposite of turn
+  int oppTurn = pieces.BLACK;  // opposite of turn
   int oppTurnIndex = 0;
   int turnIndex = 1;
 
@@ -709,20 +762,35 @@ class Board {
   // Bits 14-... fifty mover counter
   gameStateStack gameStateHistory;
   unsigned short currentGameState = 0b0000000000000000;
+  bool whiteKingSideCastle() const {
+    return (currentGameState & whiteCastleKingsideBit);
+  };
+  bool whiteQueenSideCastle() const {
+    return (currentGameState & whiteCastleQueensideBit);
+  };
+  bool blackKingSideCastle() const {
+    return (currentGameState & blackCastleKingsideBit);
+  };
+  bool blackQueenSideCastle() const {
+    return (currentGameState & blackCastleQueensideBit);
+  };
 
   // bitboards
   BitBoard allPieces;
 
   // board
-  int board[64];
+  unsigned int board[64];
+
+  void deleteTile(const unsigned char &index) {
+    board[index] = pieces.EMPTY;
+    allPieces.unSetSquare(index);
+  }
 
   void resetValues() {
-    gameStateStack newGameHistory;
-    unsigned short initialGameState = 0b0000000000000000;
-    currentGameState = initialGameState;
-    gameStateHistory = newGameHistory;
-    gameStateHistory.push(initialGameState);
-
+    currentGameState = 0;
+    for (int i = 0; i < 200; ++i) {
+      gameStateHistory.pop(); // clear history
+    };
     for (int i = 0; i < 64; ++i) {
       board[i] = pieces.EMPTY;
     };
@@ -744,10 +812,13 @@ class Board {
   };
 
  public:
-
   BitBoard getAllPieces() const { return allPieces; };
   pieceList getWPawns() const { return pawns[1]; };
   pieceList getBPawns() const { return pawns[0]; };
+  pieceList getWRooks() const { return rooks[1]; };
+  pieceList getBRooks() const { return rooks[0]; };
+  unsigned char getWhiteKing() const { return whiteKing; };
+  unsigned char getBlackKing() const { return blackKing; };
 
   void setupFen(std::string fullFen) {
     resetValues();
@@ -791,15 +862,16 @@ class Board {
 
     for (char c : castlingFen) {
       if (c == 'K') {
-        // whiteKingSideCastle = true;
+        currentGameState |= (1 << 0);
       } else if (c == 'Q') {
-        // whiteQueenSideCastle = true;
+        currentGameState |= (1 << 1);
       } else if (c == 'k') {
-        // blackKingSideCastle = true;
+        currentGameState |= (1 << 2);
       } else if (c == 'q') {
-        // blackQueenSideCastle = true;
+        currentGameState |= (1 << 3);
       }
     }
+    gameStateHistory.push(currentGameState);
 
     std::string fen = invertFen(unflippedFen);
     char index = 63;
@@ -927,9 +999,10 @@ class Board {
           } else {
             std::cout << "  turn: w,";
           }
-          std::cout << "  ply: " << plyCount
-                    << ",  wking: " << intToString(whiteKing)
-                    << ",  bking: " << intToString(blackKing);
+          std::cout << "  ply: " << plyCount;
+          std::cout << ", ( ";
+          printShortBinary(currentGameState);
+          std::cout << ")";
         } else if (chessCache.preComputedRows[i] == 1) {
           std::cout << line1;
         } else if (chessCache.preComputedRows[i] == 2) {
@@ -969,10 +1042,11 @@ class Board {
   };
 
   void addLegal(moveList &m, const Move &move) const {
-    if (board[move.moveTo()] == pieces.EMPTY ||
-        pieces.color(board[move.moveFrom()]) !=
-            pieces.color(board[move.moveTo()])) {
-      m.addConstMove(move);
+    // if empty capture or captures enemy
+    if (board[move.moveTo()] == pieces.EMPTY || turn != pieces.color(board[move.moveTo()])) {
+      if (move.moveTo() != whiteKing && move.moveTo() != blackKing) { // and not king captures
+        m.addConstMove(move);
+      }
     }
   };
 
@@ -983,15 +1057,15 @@ class Board {
         int pieceIndex = pawns[1].pieces[i];
         if (!allPieces.isSet(chessCache.wPawnMoves[pieceIndex][0].moveTo())) {
           if (chessCache.preComputedRows[pieceIndex] == 6) {
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][4]); // Queen
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][5]); // Rook
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][6]); // Bishop
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][7]); // Knight
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][4]);  // Queen
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][5]);  // Rook
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][6]);  // Bishop
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][7]);  // Knight
           } else {
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][0]); // Single Push
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][0]);  // Single Push
           }
           if (!allPieces.isSet(chessCache.wPawnMoves[pieceIndex][1].moveTo())) {
-            addLegal(m, chessCache.wPawnMoves[pieceIndex][1]); // Double Push
+            addLegal(m, chessCache.wPawnMoves[pieceIndex][1]);  // Double Push
           }
         }
         if (isCapture(chessCache.wPawnMoves[pieceIndex][2])) {
@@ -1169,10 +1243,30 @@ class Board {
         Move addingMove = chessCache.kingMoves[whiteKing][j];
         addLegal(m, addingMove);
       }
+      if (whiteKingSideCastle()) {
+        if (board[chessCache.whiteKingSideCastle.moveTo()] == pieces.EMPTY) { // and not attacked
+          m.addConstMove(chessCache.whiteKingSideCastle);
+        }
+      }
+      if (whiteQueenSideCastle()) {
+        if (board[chessCache.whiteQueenSideCastle.moveTo()] == pieces.EMPTY) { // and not attacked
+          m.addConstMove(chessCache.whiteQueenSideCastle);
+        }
+      }
     } else {
       for (int j = 0; j < 8; ++j) {
         Move addingMove = chessCache.kingMoves[blackKing][j];
         addLegal(m, addingMove);
+      }
+      if (blackKingSideCastle()) {
+        if (board[chessCache.blackKingSideCastle.moveTo()] == pieces.EMPTY) { // and not attacked
+          m.addConstMove(chessCache.blackKingSideCastle);
+        }
+      }
+      if (blackQueenSideCastle()) {
+        if (board[chessCache.blackQueenSideCastle.moveTo()] == pieces.EMPTY) { // and not attacked
+          m.addConstMove(chessCache.blackQueenSideCastle);
+        }
       }
     }
   };
@@ -1186,9 +1280,12 @@ class Board {
   };
 
   void makeMove(Move &m) {
+    unsigned short originalCastleState = currentGameState & 15; // 15 = 0b1111
+    unsigned short newCastleState = originalCastleState;
     currentGameState = 0;
-    int startSquare = m.moveFrom();
-    int targetSquare = m.moveTo();
+
+    unsigned char startSquare = m.moveFrom();
+    unsigned char targetSquare = m.moveTo();
 
     // moving
     if (board[startSquare] == pieces.BPAWN) {
@@ -1205,21 +1302,67 @@ class Board {
       bishops[0].MovePiece(startSquare, targetSquare);
     } else if (board[startSquare] == pieces.WROOK) {
       rooks[1].MovePiece(startSquare, targetSquare);
+      if (startSquare == chessCache.whiteKingRook) { // remove king side castling
+        newCastleState &= whiteCastleKingsideMask;
+      } else if (startSquare == chessCache.whiteQueenRook) { // remove queen side castling
+        newCastleState &= whiteCastleQueensideMask;
+      };
     } else if (board[startSquare] == pieces.BROOK) {
       rooks[0].MovePiece(startSquare, targetSquare);
+      if (startSquare == chessCache.blackKingRook) { // remove king side castling
+        newCastleState &= blackCastleKingsideMask;
+      } else if (startSquare == chessCache.blackQueenRook) {  // remove queen side castling
+        newCastleState &= blackCastleQueensideMask;
+      };
     } else if (board[startSquare] == pieces.WQUEEN) {
       queens[1].MovePiece(startSquare, targetSquare);
     } else if (board[startSquare] == pieces.BQUEEN) {
       queens[0].MovePiece(startSquare, targetSquare);
     } else if (startSquare == whiteKing) {
       whiteKing = targetSquare;
+      newCastleState &= whiteCastleMask;
     } else if (startSquare == blackKing) {
       blackKing = targetSquare;
+      newCastleState &= blackCastleMask;
+    }
+
+    // castling
+    if (m.isCastling()) {
+      if (targetSquare == chessCache.whiteKingCastleTo) { // white king side castle
+        board[chessCache.whiteKingRookCastleTo] = pieces.WROOK;
+        deleteTile(chessCache.whiteKingRook);
+        rooks[turnIndex].MovePiece(chessCache.whiteKingRook, chessCache.whiteKingRookCastleTo);
+        allPieces.setSquare(chessCache.whiteKingRookCastleTo);
+
+      } else if (targetSquare == chessCache.whiteQueenCastleTo) { // white queen side castle
+        board[chessCache.whiteQueenRookCastleTo] = pieces.WROOK;
+        deleteTile(chessCache.whiteQueenRook);
+        rooks[turnIndex].MovePiece(chessCache.whiteQueenRook, chessCache.whiteQueenRookCastleTo);
+        allPieces.setSquare(chessCache.whiteQueenRookCastleTo);
+
+      } else if (targetSquare == chessCache.blackKingCastleTo) { // black king side castle
+        board[chessCache.blackKingRookCastleTo] = pieces.BROOK;
+        deleteTile(chessCache.blackKingRook);
+        rooks[turnIndex].MovePiece(chessCache.blackKingRook, chessCache.blackKingRookCastleTo);
+        allPieces.setSquare(chessCache.blackKingRookCastleTo);
+
+      } else if (targetSquare == chessCache.blackQueenCastleTo) { // black king side castle
+        board[chessCache.blackQueenRookCastleTo] = pieces.BROOK;
+        deleteTile(chessCache.blackQueenRook);
+        rooks[turnIndex].MovePiece(chessCache.blackQueenRook, chessCache.blackQueenRookCastleTo);
+        allPieces.setSquare(chessCache.blackQueenRookCastleTo);
+
+      } 
     }
 
     // promotion
-    if (chessCache.preComputedRows[targetSquare] == 7 ||
-      chessCache.preComputedRows[targetSquare] == 0) {
+    if (
+       (
+            chessCache.preComputedRows[targetSquare] == 7 ||
+            chessCache.preComputedRows[targetSquare] == 0
+           ) &&
+        (board[startSquare] == pieces.BPAWN || board[startSquare] == pieces.WPAWN)
+        ) {
       pawns[turnIndex].removeAtTile(targetSquare); // remove at target square where move piece was used
       if (m.promoteQueen()) {
         board[startSquare] = pieces.QUEEN | turn;
@@ -1251,8 +1394,18 @@ class Board {
       bishops[0].removeAtTile(targetSquare);
     } else if (board[targetSquare] == pieces.WROOK) {
       rooks[1].removeAtTile(targetSquare);
+      if (targetSquare == chessCache.whiteKingRook) { // remove king side castling
+        newCastleState &= whiteCastleKingsideMask;
+      } else if (targetSquare == chessCache.whiteQueenRook) { // remove queen side castling
+        newCastleState &= whiteCastleQueensideMask;
+      };
     } else if (board[targetSquare] == pieces.BROOK) {
       rooks[0].removeAtTile(targetSquare);
+      if (targetSquare == chessCache.blackKingRook) { // remove king side castling
+        newCastleState &= blackCastleKingsideMask;
+      } else if (targetSquare == chessCache.blackQueenRook) {  // remove queen side castling
+        newCastleState &= blackCastleQueensideMask;
+      };
     } else if (board[targetSquare] == pieces.WQUEEN) {
       queens[1].removeAtTile(targetSquare);
     } else if (board[targetSquare] == pieces.BQUEEN) {
@@ -1262,7 +1415,8 @@ class Board {
     allPieces.setSquare(targetSquare);
     allPieces.unSetSquare(startSquare);
 
-    currentGameState |= (board[targetSquare] << 8);
+    currentGameState |= newCastleState; // castling
+    currentGameState |= (board[targetSquare] << 8); // capture
     gameStateHistory.push(currentGameState);
 
     board[targetSquare] = board[startSquare];
@@ -1274,8 +1428,8 @@ class Board {
 
   void unMakeMove(Move &m) {
     --plyCount;
-    int startSquare = m.moveFrom();
-    int targetSquare = m.moveTo();
+    unsigned char startSquare = m.moveFrom();
+    unsigned char targetSquare = m.moveTo();
 
     unsigned char capturedPiece = (currentGameState >> 8) & 63;
 
@@ -1306,6 +1460,38 @@ class Board {
       blackKing = startSquare;
     }
 
+    // todo!! must fix
+    // castling
+    if (m.isCastling()) {
+      if (targetSquare == chessCache.whiteKingCastleTo) { // white king side castle
+        board[chessCache.whiteKingRook] = pieces.WROOK;
+        deleteTile(chessCache.whiteKingRookCastleTo);
+        rooks[oppTurnIndex].MovePiece(chessCache.whiteKingRookCastleTo, chessCache.whiteKingRook);
+        allPieces.setSquare(chessCache.whiteKingRook);
+
+      } else if (targetSquare == chessCache.whiteQueenCastleTo) { // white queen side castle
+        board[chessCache.whiteQueenRook] = pieces.WROOK;
+        deleteTile(chessCache.whiteQueenRookCastleTo);
+        rooks[oppTurnIndex].MovePiece(chessCache.whiteQueenRookCastleTo, chessCache.whiteQueenRook);
+        allPieces.setSquare(chessCache.whiteQueenRook);
+
+      } else if (targetSquare == chessCache.blackKingCastleTo) { // black king side castle
+        board[chessCache.blackKingRook] = pieces.BROOK;
+        deleteTile(chessCache.blackKingRookCastleTo);
+        rooks[oppTurnIndex].MovePiece(chessCache.blackKingRookCastleTo, chessCache.blackKingRook);
+        allPieces.setSquare(chessCache.blackKingRook);
+
+      } else if (targetSquare == chessCache.blackQueenCastleTo) { // black king side castle
+        board[chessCache.blackQueenRook] = pieces.BROOK;
+        deleteTile(chessCache.blackQueenRookCastleTo);
+        rooks[oppTurnIndex].MovePiece(chessCache.blackQueenRookCastleTo, chessCache.blackQueenRook);
+        allPieces.setSquare(chessCache.blackQueenRook);
+
+      } 
+    }
+
+    // todo fix -- fixed??? not sure
+    // promotion
     if (chessCache.preComputedRows[targetSquare] == 7 ||
         chessCache.preComputedRows[targetSquare] == 0) {
       if (m.promoteQueen() || m.promoteRook() || m.promoteBishop() || m.promoteKnight()) {
@@ -1389,9 +1575,9 @@ PREFTData PERFT(Board &chessBoard, int depth) {
 
     //system("CLS");
     //chessBoard.display(false, cBoardHLight);
+    //system("PAUSE");
 
     PREFTData branchData = PERFT(chessBoard, depth - 1);
-    // newData.captures += branchData.captures;
     newData.numPos += branchData.numPos;
     chessBoard.unMakeMove(genMoves.moves[i]);
   }
@@ -1441,9 +1627,13 @@ void startGame(Board &chessBoard) {
       std::cout << "\n -> COMMANDS <-\n"
                 << "\"exit\" - exit current game\n"
                 << "\"undo\" - undoes a move\n"
-                << "\"apieces\" - highlights all pieces bitboard\n"
+                << "\n"
+                << "\"pieces\" - highlights all pieces bitboard\n"
+                << "\"kings\"  - highlights both kings\n"
                 << "\"wpawns\" - highlights all white pawns\n"
                 << "\"bpawns\" - highlights all black pawns\n"
+                << "\"wrooks\" - highlights all white rooks\n"
+                << "\"brooks\" - highlights all black rooks\n"
                 << "\n\n";
       system("PAUSE");
     } else if (input == "undo") {
@@ -1451,7 +1641,7 @@ void startGame(Board &chessBoard) {
         --chessBoardPly;
         chessBoard.unMakeMove(previousMoves[chessBoardPly]);
       }
-    } else if (input == "apieces") {
+    } else if (input == "pieces") {
       BitBoard allPieces = chessBoard.getAllPieces();
       chessBoard.display(false, allPieces);
       system("PAUSE");
@@ -1470,6 +1660,28 @@ void startGame(Board &chessBoard) {
         bb.setSquare(wPawns.pieces[i]);
       }
       chessBoard.display(false, bb, "  amt: " + intToString(wPawns.amt));
+      system("PAUSE");
+    } else if (input == "wrooks") {
+      BitBoard bb;
+      pieceList wRooks = chessBoard.getWRooks();
+      for (int i = 0; i < wRooks.amt; i++) {
+        bb.setSquare(wRooks.pieces[i]);
+      }
+      chessBoard.display(false, bb, "  amt: " + intToString(wRooks.amt));
+      system("PAUSE");
+    } else if (input == "brooks") {
+      BitBoard bb;
+      pieceList bRooks = chessBoard.getBRooks();
+      for (int i = 0; i < bRooks.amt; i++) {
+        bb.setSquare(bRooks.pieces[i]);
+      }
+      chessBoard.display(false, bb, "  amt: " + intToString(bRooks.amt));
+      system("PAUSE");
+    } else if (input == "kings") {
+      BitBoard bb;
+      bb.setSquare(chessBoard.getWhiteKing());
+      bb.setSquare(chessBoard.getBlackKing());
+      chessBoard.display(false, bb);
       system("PAUSE");
     } else if (input == "exit") {
       // exits
@@ -1563,6 +1775,29 @@ int main() {
   Board chessBoard;
   std::string input = " ";
 
+  //chessBoard.setupFen("8/6P1/8/b2k1N1R/1p2b3/n7/2P4P/R3K2R w KQ - 0 1"); // Final Boss Fen
+  //chessBoard.setupFen("8/5PP1/4PK2/8/8/2kp4/1pp5/8 w - - 0 1"); // simple promotion tests
+  //chessBoard.setupFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -"); // ultimate enpassant pin test
+  //chessBoard.setupFen("8/2k5/8/4r3/8/2p5/7B/1KR5 b - - 0 1"); // pinned piece blocks pin edge case
+  //chessBoard.setupFen("8/8/6b1/1k6/4R3/8/2KP2r1/8 w - - 0 1"); // pinned piece blocks pin edge case2
+  //chessBoard.setupFen("r3k2r/p2p1p1p/6b1/3Bn3/3bN3/6B1/P2P1P1P/R3K2R w KQkq - 0 1"); // castling tests
+  //chessBoard.setupFen("8/2p5/7r/KP5r/7r/7k/8/8 b - - 0 1"); // en passant leads to checkmate
+  //chessBoard.setupFen("8/6bb/8/8/R1p3k1/4P3/P2P4/K7 w - - 0 1"); // pinned en passant legality tests
+  //chessBoard.setupFen("8/1p1pkp2/2p1p3/2P1P1P1/2p1p1p1/2P1P3/1P1PKP2/8 w - - 0 1"); // en passant tests
+  chessBoard.setupFen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1"); // simple castling tests
+  //chessBoard.setupFen("4k3/1p4pp/2p5/8/q3r2Q/3p3P/1P4PK/4R3 b - -"); // cross pin test
+  //chessBoard.setupFen("4r3/1b6/4R3/3R4/kr1RK3/1p1R1N2/8/3B3q w - - 0 1"); // many block/pin test
+  //chessBoard.setupFen("8/1R4bb/8/8/2p3k1/4P3/P2P4/K7 w - - 0 1"); // en passant pin ray/block test
+  //chessBoard.setupFen("7k/7p/1p2p3/3pP3/3P4/6P1/P7/K7"); // pawn tests
+  //chessBoard.setupFen("4n1k1/6P1/4P1pP/6P1/4N3/8/7K/8"); // only valid move test // Nf6 check
+  //chessBoard.setupFen("4p3/2pkp3/4p2b/8/8/3B4/3R2K1/8"); // double check test // Bb5
+  //chessBoard.setupFen("8/8/p1p5/1p5p/1P5p/8/PPP2K1p/4R1rk"); // null move, mate in 1
+  //chessBoard.setupFen("8/3p4/P5r1/1KP2qk1/6r1/8/8/1N4R1"); // pin test
+  //chessBoard.setupFen("B3rr2/8/1k6/b7/7b/6R1/3N4/3PK3"); // a1 bishop can block check, block attacker test
+  //chessBoard.setupFen("7R/k7/P2n3R/PPnb1b2/4r3/8/1q6/3K2B1"); // rh6 block checkmate test
+  //chessBoard.setupFen("8/8/7k/7r/K6r/7r/1P6/1Q6"); // block checkmate using pawn test
+  //chessBoard.setupFen("2k5/8/4q3/6q1/3Q4/5Q2/8/1K6");
+
   allowEmojis();
 
   do {
@@ -1570,7 +1805,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V4.4";  // VERSION
+    std::cout << " V4.5";  // VERSION
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
