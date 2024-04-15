@@ -14,9 +14,7 @@ Description(I.P.O):
 
 Assumptions:
     - using smaller variable types like char/short instead of int to save memmory
-angry
-    - using ++i pre-increment insted of post-increment i++ in loops for bit
-faster loops
+    - using ++i pre-increment insted of post-increment i++, its abit faster
 
 
 SOURCES:
@@ -33,12 +31,15 @@ SOURCES:
     https://www.youtube.com/@chessprogramming591
     https://github.com/SebLague/Chess-Coding-Adventure
 
+TODO:
+ + add capture promotions
+ ? odd gamestate push at loading fen??
+
 =======================================*/
 
-#include <windows.h>  // only for colored visuals
-
-#include <chrono>  // only for timing performance tests
-#include <iostream>
+#include <windows.h> // for console visuals
+#include <chrono> // for timing
+#include <iostream> // 
 
 void setTxtColor(int colorValue);
 
@@ -387,10 +388,24 @@ class PreComputedCache {
           wPawnMoves[i][0] = Move(i, i + 8);
         }
         if (col < 7) {  // capture
-          wPawnMoves[i][3] = Move(i, i + 9);
+          if (row == 6) {
+            wPawnMoves[i][4] = Move(i, i + 9, moveFlags.PromoteToQueenFlag);
+            wPawnMoves[i][5] = Move(i, i + 9, moveFlags.PromoteToRookFlag);
+            wPawnMoves[i][6] = Move(i, i + 9, moveFlags.PromoteToBishopFlag);
+            wPawnMoves[i][7] = Move(i, i + 9, moveFlags.PromoteToKnightFlag);
+          } else {
+            wPawnMoves[i][3] = Move(i, i + 9);
+          }
         }
         if (col > 0) {  // capture
-          wPawnMoves[i][2] = Move(i, i + 7);
+          if (row == 6) {
+            wPawnMoves[i][4] = Move(i, i + 7, moveFlags.PromoteToQueenFlag);
+            wPawnMoves[i][5] = Move(i, i + 7, moveFlags.PromoteToRookFlag);
+            wPawnMoves[i][6] = Move(i, i + 7, moveFlags.PromoteToBishopFlag);
+            wPawnMoves[i][7] = Move(i, i + 7, moveFlags.PromoteToKnightFlag);
+          } else {
+            wPawnMoves[i][2] = Move(i, i + 8);
+          }
         }
         if (row == 1) {
           wPawnMoves[i][1] = Move(i, i + 16, moveFlags.PawnTwoUpFlag);
@@ -408,10 +423,24 @@ class PreComputedCache {
           bPawnMoves[i][0] = Move(i, i - 8);
         }
         if (col < 7) {  // capture
-          bPawnMoves[i][3] = Move(i, i - 7);
+          if (row == 1) {
+            bPawnMoves[i][4] = Move(i, i - 7, moveFlags.PromoteToQueenFlag);
+            bPawnMoves[i][5] = Move(i, i - 7, moveFlags.PromoteToRookFlag);
+            bPawnMoves[i][6] = Move(i, i - 7, moveFlags.PromoteToBishopFlag);
+            bPawnMoves[i][7] = Move(i, i - 7, moveFlags.PromoteToKnightFlag);
+          } else {
+            bPawnMoves[i][3] = Move(i, i - 7);
+          }
         }
         if (col > 0) {  // capture
-          bPawnMoves[i][2] = Move(i, i - 9);
+          if (row == 1) {
+            bPawnMoves[i][4] = Move(i, i - 9, moveFlags.PromoteToQueenFlag);
+            bPawnMoves[i][5] = Move(i, i - 9, moveFlags.PromoteToRookFlag);
+            bPawnMoves[i][6] = Move(i, i - 9, moveFlags.PromoteToBishopFlag);
+            bPawnMoves[i][7] = Move(i, i - 9, moveFlags.PromoteToKnightFlag);
+          } else {
+            bPawnMoves[i][2] = Move(i, i - 9);
+          }
         }
         if (row == 6) {
           bPawnMoves[i][1] = Move(i, i - 16, moveFlags.PawnTwoUpFlag);
@@ -952,6 +981,12 @@ class Board {
       turnIndex = 0;
     }
 
+    if (enPassantTargetSQR != "-") {
+      unsigned char enPassSquare = chessCache.notationToTile(enPassantTargetSQR);
+      int file = chessCache.preComputedCols[enPassSquare] + 1; // +1 cuz 0 means none
+      currentGameState |= (file << 4);
+    }
+
     for (char c : castlingFen) {
       if (c == 'K') {
         currentGameState |= (1 << 0);
@@ -1181,7 +1216,16 @@ class Board {
         unsigned char enPFile = getEnPassantFile();
         if (!addingMove.isNull()) {
           if (isCapture(addingMove)) {
-            addLegal(m, addingMove);  // normal diagonal capture
+            if (chessCache.preComputedRows[pieceIndex] == 6) {
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][4]);  // Queen
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][5]);  // Rook
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][6]);  // Bishop
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][7]);  // Knight
+            } else {
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][2]);  // Diagonal Capture
+              std::cout << intToString(chessCache.preComputedRows[pieceIndex]);
+              system("PAUSE");
+            }
           } else if (enPFile != 0 &&
                      chessCache.preComputedCols[addingMove.moveTo()] ==
                          enPFile - 1 &&
@@ -1195,7 +1239,16 @@ class Board {
         unsigned char enPFile2 = getEnPassantFile();
         if (!addingMove2.isNull()) {
           if (isCapture(addingMove2)) {
-            addLegal(m, addingMove2);  // normal diagonal capture
+            if (chessCache.preComputedRows[pieceIndex] == 6) {
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][4]);  // Queen
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][5]);  // Rook
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][6]);  // Bishop
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][7]);  // Knight
+            } else {
+              addLegal(m, chessCache.wPawnMoves[pieceIndex][3]);  // Diagonal Capture
+              std::cout << intToString(chessCache.preComputedRows[pieceIndex]);
+              system("PAUSE");
+            }
           } else if (enPFile2 != 0 &&
                      chessCache.preComputedCols[addingMove2.moveTo()] ==
                          enPFile2 - 1 &&
@@ -1226,11 +1279,20 @@ class Board {
         if (!addingMove.isNull()) {
           unsigned char enPFile = getEnPassantFile();
           if (isCapture(addingMove)) {
-            addLegal(m, addingMove);  // normal diagonal capture
+            if (chessCache.preComputedRows[pieceIndex] == 1) {
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][4]);  // Queen
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][5]);  // Rook
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][6]);  // Bishop
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][7]);  // Knight
+            } else {
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][2]);  // Diagonal Capture
+              std::cout << intToString(chessCache.preComputedRows[pieceIndex]);
+              system("PAUSE");
+            }
           } else if (enPFile != 0 &&
                      chessCache.preComputedCols[addingMove.moveTo()] ==
                          enPFile - 1 &&
-                     chessCache.preComputedRows[addingMove.moveFrom()] == 5
+                     chessCache.preComputedRows[addingMove.moveFrom()] == 3
               ) {
             addingMove.setFlag(moveFlags.EnPassantCaptureFlag);
             m.addConstMove(addingMove);  // en passant capture
@@ -1240,11 +1302,20 @@ class Board {
         if (!addingMove2.isNull()) {
           unsigned char enPFile2 = getEnPassantFile();
           if (isCapture(addingMove2)) {
-            addLegal(m, addingMove2);  // normal diagonal capture
+            if (chessCache.preComputedRows[pieceIndex] == 1) {
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][4]);  // Queen
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][5]);  // Rook
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][6]);  // Bishop
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][7]);  // Knight
+            } else {
+              addLegal(m, chessCache.bPawnMoves[pieceIndex][3]);  // Diagonal Capture
+              std::cout << intToString(chessCache.preComputedRows[pieceIndex]);
+              system("PAUSE");
+            }
           } else if (enPFile2 != 0 &&
                      chessCache.preComputedCols[addingMove2.moveTo()] ==
                          enPFile2 - 1&&
-                     chessCache.preComputedRows[addingMove.moveFrom()] == 5
+                     chessCache.preComputedRows[addingMove.moveFrom()] == 3
               ) {
             addingMove2.setFlag(moveFlags.EnPassantCaptureFlag);
             m.addConstMove(addingMove2);  // en passant capture
@@ -2208,7 +2279,8 @@ int main() {
   //chessBoard.setupFen("4r3/1b6/4R3/3R4/kr1RK3/1p1R1N2/8/3B3q w - - 0 1"); // many block/pin test
   //chessBoard.setupFen("8/1R4bb/8/8/2p3k1/4P3/P2P4/K7 w - - 0 1"); // en passant pin ray/block test
   //chessBoard.setupFen("7k/7p/1p2p3/3pP3/3P4/6P1/P7/K7"); // pawn tests
-  chessBoard.setupFen("8/4kp1p/8/8/p1p1p1P1/8/1P1PK3/8 w - - 0 1"); // en passant test
+  //chessBoard.setupFen("8/4kp1p/8/8/p1pPp1P1/8/1P2K3/8 b - d3 0 1"); // en passant test
+  chessBoard.setupFen("rkrnr3/1P1P4/2P5/3P4/4p3/5p2/4p1p1/3RNRKR w - - 0 1"); // capture promotion test
   //chessBoard.setupFen("4n1k1/6P1/4P1pP/6P1/4N3/8/7K/8"); // only valid move test // Nf6 check
   //chessBoard.setupFen("4p3/2pkp3/4p2b/8/8/3B4/3R2K1/8"); // double check test // Bb5
   //chessBoard.setupFen("8/8/p1p5/1p5p/1P5p/8/PPP2K1p/4R1rk"); // null move, mate in 1
@@ -2225,7 +2297,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V4.6";  // VERSION
+    std::cout << " V4.7";  // VERSION
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
