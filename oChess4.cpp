@@ -38,6 +38,7 @@ TODO:
 
 =======================================*/
 
+#include <algorithm> // for move sorting
 #include <windows.h> // for console visuals
 #include <chrono> // for timing
 #include <iostream> //
@@ -141,7 +142,23 @@ class BitBoard {
     return x & 0x7F; // return only the least significant 7 bits (to handle overflow)
   }
 
+  int populationCountBAND(unsigned long long x2) const {
+    unsigned long long x = bitBoard & x2;  // copy bitboard for manipulation
+    x = x - ((x >> 1) & 0x5555555555555555ULL);  // step 1: divide and conquer
+                                                 // to sum 2 bits at a time
+    x = (x & 0x3333333333333333ULL) +
+        ((x >> 2) & 0x3333333333333333ULL);      // step 2: Sum groups of 4 bits
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL;  // step 3: sum groups of 8 bits
+    x = x + (x >> 8);   // step 4: Sum groups of 16 bits
+    x = x + (x >> 16);  // step 5: Sum groups of 32 bits
+    x = x + (x >> 32);  // step 6: Sum all bits in the 64-bit integer
+    return x & 0x7F;    // return only the least significant 7 bits (to handle
+                        // overflow)
+  }
+
   unsigned long long get() const { return bitBoard; };
+  bool isEmpty() const { return bitBoard == 0; };
+
   BitBoard(){};
   BitBoard(unsigned long long newbb) { bitBoard = newbb; };
 };
@@ -194,15 +211,15 @@ class PieceCache {
   const unsigned char BQUEEN = QUEEN | BLACK;    // 13
   const unsigned char BKING = KING | BLACK;      // 14
 
-  unsigned char type(const unsigned char piece) const {
+  unsigned char type(const unsigned char &piece) const {
     return (piece & TYPE_MASK);
   }
 
-  unsigned char color(const unsigned char piece) const {
+  unsigned char color(const unsigned char &piece) const {
     return (piece & COLOR_MASK);
   }
 
-  const std::string toUnicode(const unsigned char pieceType) const {
+  const std::string toUnicode(const unsigned char &pieceType) const {
     switch (pieceType) {
       case 0:
         return EMPTY_STRING;
@@ -302,7 +319,42 @@ class PreComputedCache {
   unsigned char preComputedRows[64];  // each element is set to which row its on
   unsigned char preComputedCols[64];  // each element is set to which col its on
 
-  unsigned int distFromCenter[64];
+  const int centerPST[64] = {
+      // center piece square table
+      -40, -20, -20, -10, -10, -20, -20, -40,//
+      -10, 10, 0, 0, 0, 0, 10, -10,//
+      -10, 0, 0, 2, 2, 0, 0, -10,//
+      -10, 0, 2, 40, 40, 2, 0, -10,//
+      -10, 0, 2, 40, 40, 2, 0, -10,//
+      -10, 0, 0, 2, 2, 0, 0, -10,//
+      -10, 10, 0, 0, 0, 0, 10 -10,//
+      -40, -20, -20, -10, -10, -20, -20, -40,//
+  };
+
+  const int earlyKingPST[64] = {
+      // kings piece square table
+      0, 10, 5,  0,   0,   0,   10,  5,  //
+      0, 0,  -10, -40, -10, -10, -10, 0,  //
+      0, 0,  -20,   -40, -40, 0,   0,   0,  //
+      0, 0,  -40,   -40,   -40, -40, 0,   0,  //
+      0, 0,  -40,   -40,   -40, -40, 0,   0,  //
+      0, 0,  -20,   -40, -40, 0,   0,   0,  //
+      0, 0,  -10, -40, -10, -10, -10, 0,  //
+      0, 10, 5,  0,   0,   0,   10,  5,  //
+  };
+
+
+  const int bishopsPST[64] = {
+      // bishops piece square table
+      -20, -20, 0,  0, 0, 0,  -20,  -20,  //
+      -20, 20, 0, 0, 0, 0, 20, -20,  //
+      -10, 0, 20, 2, 2, 20, 0, -10,  //
+      0, 0, 20, 2, 2, 20, 0, 0,  //
+      0, 0, 20, 2, 2, 20, 0, 0,  //
+      -10, 0, 20, 2, 2, 20, 0, -10,  //
+      -20, 20, 0, 0, 0, 0, 20, -20,  //
+      -20, -20, 0, 0, 0, 0, -20, -20,  //
+  };
 
   const int directionOffsets[8] = {
       // diagonals
@@ -393,6 +445,25 @@ class PreComputedCache {
   const int evalPositiveInf = 100000;
   const int evalNegativeInf = -100000;
 
+  const int evalWhiteWins = 10000;
+  const int evalWhiteLoss = -10000;
+
+  int value(const unsigned char &piece) const {
+    unsigned char pieceType = pieces.type(piece);
+    if (pieceType == pieces.PAWN) {
+      return pawnValue;
+    } else if (pieceType == pieces.KNIGHT) {
+      return knightValue;
+    } else if (pieceType == pieces.BISHOP) {
+      return bishopValue;
+    } else if (pieceType == pieces.ROOK) {
+      return rookValue;
+    } else if (pieceType == pieces.QUEEN) {
+      return queenValue;
+    }
+    return 0;
+  }
+
   bool inBounds(int tile) const { return tile >= 0 && tile < 64; };
 
   PreComputedCache() {
@@ -405,13 +476,11 @@ class PreComputedCache {
     blackQueenSideCastle = Move(60, blackQueenCastleTo, moveFlags.CastleFlag);
 
     for (int i = 0; i < 64; ++i) {
-      unsigned char row = (i / 8);
-      unsigned char col = (i % 8);
+      int row = (i / 8);
+      int col = (i % 8);
       rowColValues[row][col] = i;
       preComputedRows[i] = row;
       preComputedCols[i] = col;
-
-      distFromCenter[i] = abs(row - 3.5) + abs(col - 3.5);
 
       // white pawns
       if (row < 7) {
@@ -420,6 +489,7 @@ class PreComputedCache {
           wPawnMoves[i][5] = Move(i, i + 8, moveFlags.PromoteToRookFlag);
           wPawnMoves[i][6] = Move(i, i + 8, moveFlags.PromoteToBishopFlag);
           wPawnMoves[i][7] = Move(i, i + 8, moveFlags.PromoteToKnightFlag);
+          wPawnMoves[i][0] = Move(i, i + 8);
         } else {
           wPawnMoves[i][0] = Move(i, i + 8);
         }
@@ -441,6 +511,7 @@ class PreComputedCache {
           bPawnMoves[i][5] = Move(i, i - 8, moveFlags.PromoteToRookFlag);
           bPawnMoves[i][6] = Move(i, i - 8, moveFlags.PromoteToBishopFlag);
           bPawnMoves[i][7] = Move(i, i - 8, moveFlags.PromoteToKnightFlag);
+          bPawnMoves[i][0] = Move(i, i - 8);
         } else {
           bPawnMoves[i][0] = Move(i, i - 8);
         }
@@ -701,7 +772,7 @@ class PreComputedCache {
               if (!addingMove.isNull()) {
                 if (addingMove.moveTo() == j) {
                   breakOut = true;
-                  for (int r2 = r; r2 > 0; --r2) {
+                  for (int r2 = r; r2 >= 0; --r2) {
                     bb.setSquare(rookMoves[d][i][r2].moveTo());
                   }
                   break;
@@ -721,12 +792,15 @@ class PreComputedCache {
               if (!addingMove.isNull()) {
                 if (addingMove.moveTo() == j) {
                   breakOut = true;
-                  for (int r2 = r; r2 > 0; --r2) {
-                    bb.setSquare(rookMoves[d][i][r2].moveTo());
+                  for (int r2 = r; r2 >= 0; --r2) {
+                    bb.setSquare(bishopMoves[d][i][r2].moveTo());
                   }
                   break;
                 }
               }
+            }
+            if (breakOut) {
+              break;
             }
           }
         }
@@ -894,6 +968,7 @@ class Board {
   BitBoard allPieces;
   BitBoard whiteAtks;
   BitBoard blackAtks;
+  BitBoard checkRay;
 
   // board
   unsigned int board[64];
@@ -931,9 +1006,15 @@ class Board {
     turnIndex = 1;
     oppTurn = pieces.BLACK;
   };
+
+  // bools for more efficient access on checks
+  bool boolWhiteCheck = false;
+  bool boolBlackCheck = false;
+  unsigned int checkCount = 0;
  public:
   int turn = pieces.WHITE;
 
+  BitBoard getcray() const { return checkRay; };
   BitBoard getAllPieces() const { return allPieces; };
   BitBoard getWhiteAtks() const { return whiteAtks; };
   BitBoard getBlackAtks() const { return blackAtks; };
@@ -1002,6 +1083,53 @@ class Board {
     }
     return true;
   };
+
+  void orderMoves(moveList &moves) {
+    unsigned int scores[218] = {0};
+    for (int i = 0; i < moves.amt; ++i) {
+      const Move &cMove = moves.moves[i];
+      const unsigned char &moveTo = cMove.moveTo();
+      const unsigned int &from = board[cMove.moveFrom()];
+      const unsigned int &captured = board[moveTo];
+      const int &myValue = chessCache.value(from);
+
+      scores[i] = 2;
+      if (turn == pieces.WHITE) {
+        if (blackAtks.isSet(moveTo)) {
+          scores[i] = 1;
+          if (captured != pieces.EMPTY) {
+            if (myValue > chessCache.value(captured)) { // my high vlaue captures guarded low value
+              scores[i] = 0;
+            }
+          }
+        } else {
+          const int &captuedValue = chessCache.value(captured);
+          if (myValue <= captuedValue) { // my low/equal value captures unprotected piece
+            scores[i] += captuedValue - myValue;
+          }
+        }
+      } else {
+        if (whiteAtks.isSet(moveTo)) {
+          scores[i] = 1;
+          if (captured != pieces.EMPTY) {
+            if (myValue > chessCache.value(captured)) { // my high vlaue captures guarded low value
+              scores[i] = 0;
+            }
+          } else {
+            const int &captuedValue = chessCache.value(captured);
+            if (myValue <= captuedValue) { // my low/equal value captures unprotected piece
+              scores[i] += captuedValue - myValue;
+            }
+          }
+        }
+      }
+    }
+    
+    // Use std::sort to sort moves based on scores
+    std::sort(moves.moves, moves.moves + moves.amt, [&](const Move &a, const Move &b) {
+        return scores[&a - &moves.moves[0]] < scores[&b - &moves.moves[0]];
+    });
+  }
 
   void setupFen(std::string fullFen) {
     resetValues();
@@ -1158,21 +1286,21 @@ class Board {
                std::string line4 = " ") const {
     for (int i = 0; i < 64; ++i) {
       int i2 = i;
-      if (whiteSide) {
-        i2 = 63 - i;
-      }
-
       int row = chessCache.preComputedRows[i2];
       int col = chessCache.preComputedCols[i2];
+      if (whiteSide) {
+        i2 = ((7 - row) * 8) + (col);
+      }
+      int row2 = chessCache.preComputedRows[i2];
       if (chessCache.preComputedCols[i] == 0) {
         setTxtColor(chessCache.greyLetCol);
-        std::cout << (row + 1) << '|';
+        std::cout << (row2 + 1) << '|';
       }
 
       if (highlights.isSet(i2)) {
         setTxtColor(chessCache.hlightCol);
       } else {
-        int colorIndex = (row + col) % 2;
+        int colorIndex = (row2 + col) % 2;
         int pieceColor = pieces.color(board[i2]) == 0 ? 0 : 1;
         if (colorIndex) {
           setTxtColor(pieceColor == 0 ? chessCache.wWhiteCol
@@ -1247,8 +1375,24 @@ class Board {
 
   void addLegal(moveList &ML, const Move &m) const {
     // if empty capture or captures enemy
-    if (board[m.moveTo()] == pieces.EMPTY || turn != pieces.color(board[m.moveTo()])) {
-      if (m.moveTo() != whiteKing && m.moveTo() != blackKing) { // and not king captures
+    const unsigned int &mto = m.moveTo();
+    if (!checkRay.isEmpty()) {
+      if (!checkRay.isSet(mto)) {
+        return;
+      }
+    }
+    if (board[mto] == pieces.EMPTY || turn != pieces.color(board[mto])) {
+      if (mto != whiteKing && mto != blackKing) {  // and not king captures
+        ML.addConstMove(m);
+      }
+    }
+  };
+
+  void addPLegal(moveList &ML, const Move &m) const {
+    // if empty capture or captures enemy
+    const unsigned int &mto = m.moveTo();
+    if (board[mto] == pieces.EMPTY || turn != pieces.color(board[mto])) {
+      if (mto != whiteKing && mto != blackKing) {  // and not king captures
         ML.addConstMove(m);
       }
     }
@@ -1287,12 +1431,12 @@ class Board {
               addingMove.setFlag(moveFlags.PromoteToKnightFlag);
               addLegal(m, addingMove);  // Promote
             } else {
-                addLegal(m, addingMove);  // Diagonal Capture
+              addLegal(m, addingMove);  // Diagonal Capture
             }
           } else if (enPFile != 0 &&
                      chessCache.preComputedCols[addingMove.moveTo()] ==
                          enPFile - 1 &&
-                     chessCache.preComputedRows[addingMove.moveFrom()] == 4
+                     chessCache.preComputedRows[addingMove.moveFrom()] == 4 // en passant row
               ) {
             addingMove.setFlag(moveFlags.EnPassantCaptureFlag);
             m.addConstMove(addingMove);  // en passant capture
@@ -1312,12 +1456,12 @@ class Board {
               addingMove2.setFlag(moveFlags.PromoteToKnightFlag);
               addLegal(m, addingMove2);  // Promote
             } else {
-                addLegal(m, addingMove2);  // Diagonal Capture
+              addLegal(m, addingMove2);  // Diagonal Capture
             }
           } else if (enPFile2 != 0 &&
                      chessCache.preComputedCols[addingMove2.moveTo()] ==
                          enPFile2 - 1 &&
-                     chessCache.preComputedRows[addingMove2.moveFrom()] == 4
+                     chessCache.preComputedRows[addingMove2.moveFrom()] == 4 // en passant row
               ) {
             addingMove2.setFlag(moveFlags.EnPassantCaptureFlag);
             m.addConstMove(addingMove2);  // en passant capture
@@ -1540,7 +1684,7 @@ class Board {
       for (int j = 0; j < 8; ++j) {
         const Move &addingMove = chessCache.kingMoves[whiteKing][j];
         if (!blackAtks.isSet(addingMove.moveTo())) {
-          addLegal(m, addingMove);
+          addPLegal(m, addingMove);
         }
       }
       if (!whiteInCheck()) { // if not in check allow castling
@@ -1564,7 +1708,7 @@ class Board {
       for (int j = 0; j < 8; ++j) {
         const Move &addingMove = chessCache.kingMoves[blackKing][j];
         if (!whiteAtks.isSet(addingMove.moveTo())) {
-          addLegal(m, addingMove);
+          addPLegal(m, addingMove);
         }
       }
       if (!blackInCheck()) { // if not in check allow castling
@@ -1646,6 +1790,10 @@ class Board {
             const Move& addingMove = chessCache.bishopMoves[d][bishops[1].pieces[i]][r];
             if (!addingMove.isNull()) {
               whiteAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == blackKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1661,6 +1809,10 @@ class Board {
             const Move& addingMove = chessCache.bishopMoves[d][queens[1].pieces[i]][r];
             if (!addingMove.isNull()) {
               whiteAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == blackKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1677,6 +1829,10 @@ class Board {
                 chessCache.bishopMoves[d][bishops[0].pieces[i]][r];
             if (!addingMove.isNull()) {
               blackAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == whiteKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1692,6 +1848,10 @@ class Board {
             const Move& addingMove = chessCache.bishopMoves[d][queens[0].pieces[i]][r];
             if (!addingMove.isNull()) {
               blackAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == whiteKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1712,6 +1872,10 @@ class Board {
             const Move& addingMove = chessCache.rookMoves[d][rooks[1].pieces[i]][r];
             if (!addingMove.isNull()) {
               whiteAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == blackKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1727,6 +1891,10 @@ class Board {
             const Move& addingMove = chessCache.rookMoves[d][queens[1].pieces[i]][r];
             if (!addingMove.isNull()) {
               whiteAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == blackKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1742,6 +1910,10 @@ class Board {
             const Move& addingMove = chessCache.rookMoves[d][rooks[0].pieces[i]][r];
             if (!addingMove.isNull()) {
               blackAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == whiteKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1757,6 +1929,10 @@ class Board {
             const Move& addingMove = chessCache.rookMoves[d][queens[0].pieces[i]][r];
             if (!addingMove.isNull()) {
               blackAtks.setSquare(addingMove.moveTo());
+              if (addingMove.moveTo() == whiteKing) {
+                checkRay = chessCache.rays[addingMove.moveFrom()][addingMove.moveTo()];
+                ++checkCount;
+              }
               if (allPieces.isSet(addingMove.moveTo())) {
                 break;
               }
@@ -1784,6 +1960,16 @@ class Board {
   };
 
   void generatePseudoLegals() {
+    checkCount = 0;
+    checkRay.clearBoard();
+    if (whiteInCheck()) {
+      boolWhiteCheck = true;
+    } else  if (blackInCheck()) {
+      boolBlackCheck = true;
+    } else {
+      boolWhiteCheck = false;
+      boolBlackCheck = false;
+    }
     whiteAtks.clearBoard();
     blackAtks.clearBoard();
     genPseudoPawnMoves();
@@ -1793,10 +1979,12 @@ class Board {
     genPseudoKingMoves();
   }
   void generateMoves(moveList &moves) const {
-    generatePawnMoves(moves);
-    generateKnightMoves(moves);
-    generateBishopMoves(moves);
-    generateRookMoves(moves);
+    if (checkCount < 2) {
+      generatePawnMoves(moves);
+      generateKnightMoves(moves);
+      generateBishopMoves(moves);
+      generateRookMoves(moves);
+    }
     generateKingMoves(moves);
   };
 
@@ -2105,15 +2293,15 @@ class Board {
   int heuristicEval() {
     int eval = 0;
 
-    BitBoard whitesecureMask(whiteAtks.get() & allPieces.get());
-    BitBoard blacksecureMask(blackAtks.get() & allPieces.get());
+    // guard and threats scores
+    eval += whiteAtks.populationCountBAND(allPieces.get());
+    eval -= blackAtks.populationCountBAND(allPieces.get());
 
-    eval += whitesecureMask.populationCount();
-    eval -= blacksecureMask.populationCount();
-
+    // mobility scores
     eval += whiteAtks.populationCount();
     eval -= blackAtks.populationCount();
 
+    // material scores
     eval += pawns[1].amt * chessCache.pawnValue;
     eval -= pawns[0].amt * chessCache.pawnValue;
     eval += knights[1].amt * chessCache.knightValue;
@@ -2125,27 +2313,64 @@ class Board {
     eval += queens[1].amt * chessCache.queenValue;
     eval -= queens[0].amt * chessCache.queenValue;
 
-    /*
-    // pawns and knights focus more on center
-    for (int i = 0; i < knights[0].amt; ++i) {
-      eval -= chessCache.distFromCenter[knights[0].pieces[i]];
-    }
-    for (int i = 0; i < knights[1].amt; ++i) {
-      eval += chessCache.distFromCenter[knights[1].pieces[i]];
-    }
-    for (int i = 0; i < pawns[0].amt; ++i) {
-      eval -= chessCache.distFromCenter[pawns[0].pieces[i]];
-    }
-    for (int i = 0; i < pawns[1].amt; ++i) {
-      eval += chessCache.distFromCenter[pawns[1].pieces[i]];
-    }
-    */
+    int whiteEndGameEval = knights[1].amt + bishops[1].amt + queens[1].amt + rooks[1].amt;
+    int blackEndGameEval = knights[0].amt + bishops[0].amt + queens[0].amt + rooks[0].amt;
 
+    // endgames
+    if (whiteEndGameEval > 3) {
+        // control center
+        for (int i = 0; i < knights[0].amt; ++i) {
+          eval -= chessCache.centerPST[knights[0].pieces[i]];
+        }
+        for (int i = 0; i < bishops[0].amt; ++i) {
+          eval -= chessCache.bishopsPST[bishops[0].pieces[i]];
+        }
+        for (int i = 0; i < pawns[0].amt; ++i) {
+          eval -= chessCache.centerPST[pawns[0].pieces[i]];
+        }
+        eval -= chessCache.earlyKingPST[blackKing];
+        eval += chessCache.earlyKingPST[whiteKing];
+    } else {
+        // push pawns to end
+        for (int i = 0; i < pawns[0].amt; ++i) {
+          eval -= (7 - chessCache.preComputedRows[pawns[0].pieces[i]]);
+        }
+    }
+    if (blackEndGameEval > 3) {
+        // control center
+        for (int i = 0; i < knights[1].amt; ++i) {
+          eval += chessCache.centerPST[knights[1].pieces[i]];
+        }
+        for (int i = 0; i < bishops[1].amt; ++i) {
+          eval += chessCache.bishopsPST[bishops[1].pieces[i]];
+        }
+        for (int i = 0; i < pawns[1].amt; ++i) {
+          eval += chessCache.centerPST[pawns[1].pieces[i]];
+        }
+        eval -= chessCache.earlyKingPST[blackKing];
+        eval += chessCache.earlyKingPST[whiteKing];
+    } else {
+        // push pawns to end
+        for (int i = 0; i < pawns[1].amt; ++i) {
+          eval += chessCache.preComputedRows[pawns[1].pieces[i]];
+        }
+    }
+
+    // score threats, defends king better
     if (whiteInCheck()) {
       eval -= chessCache.pawnValue;
     }
     if (blackInCheck()) {
       eval += chessCache.pawnValue;
+    }
+
+    // imbalance pieces scores
+    // bishop pairs
+    if (bishops[1].amt >= 2) {
+        eval += 40;
+    }
+    if (bishops[0].amt >= 2) {
+        eval -= 40;
     }
 
     return eval;
@@ -2227,11 +2452,12 @@ mmRes miniMax(Board &chessBoard, int depth, int alpha, int beta) {
   mmRes result;
   moveList genMoves;
   chessBoard.generateMoves(genMoves);
+  chessBoard.orderMoves(genMoves);
   if (genMoves.amt == 0) {
     if (chessBoard.whiteInCheck()) {  // white checkmated
-      result.eval = chessCache.evalNegativeInf;
+      result.eval = chessCache.evalWhiteLoss - depth;
     } else if (chessBoard.blackInCheck()) {  // black checkmated
-      result.eval = chessCache.evalPositiveInf;
+      result.eval = chessCache.evalWhiteWins + depth;
     }
     result.nodes = 1;
     return result;
@@ -2253,14 +2479,11 @@ mmRes miniMax(Board &chessBoard, int depth, int alpha, int beta) {
         result.best = genMoves.moves[i];
         maxEval = newResults.eval;
       }
-      if (alpha < maxEval) {
-        alpha = maxEval;
+      if (newResults.eval >= beta) {
+        break;
       }
-      if (beta <= alpha) {
-        //break;
-      }
-      if (alpha < maxEval) {
-        alpha = maxEval;
+      if (newResults.eval > alpha) {
+        alpha = newResults.eval;
       }
     }
     result.eval = maxEval;
@@ -2277,14 +2500,11 @@ mmRes miniMax(Board &chessBoard, int depth, int alpha, int beta) {
         result.best = genMoves.moves[i];
         minEval = newResults.eval;
       }
-      if (beta > minEval) {
-        beta = minEval;
+      if (newResults.eval <= alpha) {
+        break;
       }
-      if (beta <= alpha) {
-        //break;
-      }
-      if (beta > minEval) {
-        beta = minEval;
+      if (newResults.eval < beta) {
+        beta = newResults.eval;
       }
     }
     result.eval = minEval;
@@ -2299,9 +2519,12 @@ void startGame(Board &chessBoard) {
   std::string aiTxt = " ";
 
   bool blackSide = false;
-  int chessBoardPly = 0;  // amt of chess movse
+  int chessBoardPly = 0;  // amt of chess moves
   int moveFrom = 0;
   int moveTo = 0;
+
+  bool whiteAI = false;
+  bool blackAI = false;
 
   do {
     if (!chessBoard.isSynced()) {
@@ -2311,20 +2534,28 @@ void startGame(Board &chessBoard) {
     cBoardHLight.clearBoard();
     chessBoard.display(blackSide, cBoardHLight, aiTxt);
 
-    //if (chessBoard.turn == pieces.BLACK) {
-    int beta = chessCache.evalPositiveInf;
-    int alpha = chessCache.evalNegativeInf;
-    int depth = 3;
-    mmRes minMaxResult = miniMax(chessBoard, depth, alpha, beta);
-    if (!minMaxResult.best.isNull()) {
-      chessBoard.makeMove(minMaxResult.best);
-      ++chessBoardPly;
-      previousMoves[chessBoardPly] = minMaxResult.best;
-      aiTxt = "  EVAL: " + intToString(minMaxResult.eval) +
-              ",  nodes: " + intToString(minMaxResult.nodes);
-      continue;
+    if ((chessBoard.turn == pieces.BLACK && blackAI) || (chessBoard.turn == pieces.WHITE && whiteAI)) {
+        int beta = chessCache.evalPositiveInf;
+        int alpha = chessCache.evalNegativeInf;
+        int depth = 4;
+        if ((chessBoard.getBPawns().amt + chessBoard.getBPawns().amt) < 5) {
+           depth = 5;
+        }
+        auto start = std::chrono::steady_clock::now();
+        mmRes minMaxResult = miniMax(chessBoard, depth, alpha, beta);
+        if (!minMaxResult.best.isNull()) {
+          chessBoard.makeMove(minMaxResult.best);
+          auto endt = std::chrono::steady_clock::now();
+          auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
+          previousMoves[chessBoardPly] = minMaxResult.best;
+          ++chessBoardPly;
+          aiTxt = "  EVAL: " + intToString(minMaxResult.eval) +
+                  ",  nodes: " + intToString(minMaxResult.nodes) +
+                  ",  time: " + intToString(static_cast<int>(duration)) + "ms" +
+                  ",  depth: " + intToString(depth);
+          continue;
+        }
     }
-    //}
 
     std::cout << "input: ";
     std::cin >> input;
@@ -2335,7 +2566,10 @@ void startGame(Board &chessBoard) {
                 << "\"exit\" - exit current game\n"
                 << "\"undo\" - undoes a move\n"
                 << "\"flip\" - flips board\n"
+                << "\"wai\" - toggle white AI\n"
+                << "\"bai\" - toggle black AI\n"
                 << "\n"
+                << "\"cray\" - highlights check ray bitboard\n"
                 << "\"pieces\" - highlights all pieces bitboard\n"
                 << "\"watks\" - highlights all white attacks bitboard\n"
                 << "\"batks\" - highlights all black attacks bitboard\n"
@@ -2353,6 +2587,15 @@ void startGame(Board &chessBoard) {
       }
     } else if (input == "flip") {
       blackSide = !blackSide;
+    } else if (input == "wai") {
+      whiteAI = !whiteAI;
+    } else if (input == "bai") {
+      blackAI = !blackAI;
+    } else if (input == "cray") {
+      BitBoard bb = chessBoard.getcray();
+      chessBoard.display(blackSide, bb,
+                         "  popCount: " + intToString(bb.populationCount()));
+      system("PAUSE");
     } else if (input == "pieces") {
       BitBoard bb = chessBoard.getAllPieces();
       chessBoard.display(blackSide, bb,
@@ -2499,7 +2742,7 @@ int main() {
   std::string input = " ";
 
   //chessBoard.setupFen("8/6P1/8/b2k1N1R/1p2b3/n7/2P4P/R3K2R w KQ - 0 1"); // Final Boss Fen
-  //chessBoard.setupFen("8/5PP1/4PK2/8/8/2kp4/1pp5/8 w - - 0 1"); // simple promotion tests
+  //chessBoard.setupFen("7r/5PPP/4PKP1/8/8/1pkp4/ppp5/R7 w - - 0 1"); // simple promotion tests
   //chessBoard.setupFen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - -"); // ultimate enpassant pin test
   //chessBoard.setupFen("8/2k5/8/4r3/8/2p5/7B/1KR5 b - - 0 1"); // pinned piece blocks pin edge case
   //chessBoard.setupFen("8/8/6b1/1k6/4R3/8/2KP2r1/8 w - - 0 1"); // pinned piece blocks pin edge case2
@@ -2515,13 +2758,14 @@ int main() {
   //chessBoard.setupFen("8/4kp1p/8/8/p1pPp1P1/8/1P2K3/8 b - d3 0 1"); // en passant test
   //chessBoard.setupFen("rkrnr3/1P1P4/2P5/3P4/4p3/5p2/4p1p1/3RNRKR w - - 0 1"); // capture promotion test
   //chessBoard.setupFen("4n1k1/6P1/4P1pP/6P1/4N3/8/7K/8"); // only valid move test // Nf6 check
-  //chessBoard.setupFen("4p3/2pkp3/4p2b/8/8/3B4/3R2K1/8"); // double check test // Bb5
+  chessBoard.setupFen("4p3/2pkp3/4p2b/8/8/3B4/3R2K1/8 w - - 0 1"); // double check test // Bb5
   //chessBoard.setupFen("8/8/p1p5/1p5p/1P5p/8/PPP2K1p/4R1rk"); // null move, mate in 1
   //chessBoard.setupFen("8/3p4/P5r1/1KP2qk1/6r1/8/8/1N4R1"); // pin test
-  //chessBoard.setupFen("B3rr2/8/1k6/b7/7b/6R1/3N4/3PK3 w - - 0 1"); // a1 bishop can block check, block attacker test
+  //chessBoard.setupFen("B3rr2/8/1k6/b7/B6b/6R1/3N4/3PK3 w - - 0 1"); // a1 bishop can block check, block attacker test
   //chessBoard.setupFen("7R/k7/P2n3R/PPnb1b2/4r3/8/1q6/3K2B1"); // rh6 block checkmate test
   //chessBoard.setupFen("8/8/7k/7r/K6r/7r/1P6/1Q6"); // block checkmate using pawn test
   //chessBoard.setupFen("2k5/8/4q3/6q1/3Q4/5Q2/8/1K6");
+  //chessBoard.setupFen("5r2/8/6k1/6pp/8/3Q4/2K5/8 w - - 0 1");
 
   allowEmojis();
 
@@ -2530,7 +2774,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V5";  // VERSION
+    std::cout << " V5.1";  // VERSION
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
