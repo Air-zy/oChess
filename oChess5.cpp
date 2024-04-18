@@ -33,8 +33,6 @@ SOURCES:
 
 TODO:
  + legalize pins and checks
- + fix minimax alpha beta pruning
- ? odd gamestate push at loading fen??
 
 =======================================*/
 
