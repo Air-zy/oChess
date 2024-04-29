@@ -516,12 +516,12 @@ class PreComputedCache {
 
   int bishopPST[2][64] = {
       -20, -10, -10, -10, -10, -10, -10, -20,  //
-      -10, 0,   0,   0,   0,   0,   0,   -10,  //
+      -10, 10,  0,   0,   0,   0,   10,  -10,  //
       -10, 0,   5,   10,  10,  5,   0,   -10,  //
       -10, 5,   10,  10,  10,  10,  5,   -10,  //
       -10, 0,   10,  10,  10,  10,  0,   -10,  //
       -10, 10,  10,  5,   5,   10,  10,  -10,  //
-      -10, 10,  0,   0,   0,   0,   10,  -10,  //
+      -10, 10,  10,  0,   0,   10,  10,  -10,  //
       -20, -10, -20, -10, -10, -20, -10, -20,  //
   };
   int rookPST[2][64] = {
@@ -3323,7 +3323,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V5.5";  // VERSION
+    std::cout << " V5.6";  // VERSION
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
