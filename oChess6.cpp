@@ -1264,7 +1264,9 @@ class Board {
       const unsigned int &captured = board[moveTo];
       const int &myValue = chessCache.value(board[moveFrom]);
 
-      int turnI = 0;
+      int turnI = turnIndex;
+      //cMPair.score += moveHHistory[turnI][moveFrom][moveTo];
+      
       cMPair.score = chessCache.statOrdPST[moveTo];
       if (turn == pieces.WHITE) {
         if (blackAtks.isSet(moveTo)) { // if moves to enemy guarded square
@@ -1291,6 +1293,7 @@ class Board {
             cMPair.score += moveHHistory[0][moveFrom][moveTo];
         }
       }
+      
 
       if (cMove.promoteBishop() || cMove.promoteKnight() || cMove.promoteRook() || cMove.promoteQueen()) {
         cMPair.score += 1000;
@@ -1300,6 +1303,22 @@ class Board {
               [](const movePair &a, const movePair &b) {
                 return a.score > b.score;  // Sort in descending order of score
               });
+  }
+
+  std::string notateMove(Move &m) const {
+    int piece = board[m.moveFrom()];
+    int captured = board[m.moveTo()];
+    std::string moveNotation = pieces.toUnicode(pieces.type(piece)) + " ";
+    if (captured != pieces.EMPTY) {
+      moveNotation = moveNotation + chessCache.tileToNotation(m.moveFrom());
+      moveNotation = moveNotation + 'x';
+    } else {
+      if (pieces.type(piece) != pieces.PAWN && pieces.type(piece) != pieces.KING) {
+        moveNotation = moveNotation + chessCache.tileToNotation(m.moveFrom());
+      }
+    }
+    moveNotation = moveNotation + chessCache.tileToNotation(m.moveTo());
+    return moveNotation;
   }
 
   void setupFen(std::string fullFen) {
@@ -2836,20 +2855,30 @@ class Board {
 
       searchRes result;
 
-      int ogDepth = 6;
+      int depthReached = 1;
       result.eval = 0;
-      search_BestMove[ogDepth] = Move();
       search_Nodes = 0;
 
-      result.eval = negamax(ogDepth, alpha, beta);
+      auto start = std::chrono::steady_clock::now();
+      for (int depth = 1; depth < 100; ++depth) { // iterative deepening
+        depthReached = depth;
+        search_BestMove[depthReached] = Move();
+        result.eval = alphaBeta(depth ,alpha, beta);
+        auto endt = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
+        if (duration > 1000) {
+          break;
+        }
+      }
+
       //system("PAUSE");
-      result.m = search_BestMove[ogDepth];
+      result.m = search_BestMove[depthReached];
       result.nodes = search_Nodes;
-      result.depth = ogDepth;
+      result.depth = depthReached;
       return result;
   };
 
-  int negamax(int depth, int alpha, int beta) {
+  int negaMax(int depth, int alpha, int beta) {
     if (depth == 0) {  // leaf
       return heuristicEval();
     }
@@ -2866,10 +2895,9 @@ class Board {
     }
 
     orderMoves(genMoves);
-
     for (unsigned char i = 0; i < genMoves.amt; ++i) {
       makeMove(genMoves.moves[i].move);
-      int score = -alphaBeta(depth - 1, -beta, -alpha);
+      int score = -negaMax(depth - 1, -beta, -alpha);
       unMakeMove(genMoves.moves[i].move);
       search_Nodes += 1;
 
@@ -2975,24 +3003,10 @@ PREFTData PERFT(Board &chessBoard, int depth, int &depthCheck) {
   chessBoard.generateMoves(genMoves, true);
   chessBoard.orderMoves(genMoves);
   for (unsigned char i = 0; i < genMoves.amt; ++i) {
-    //Board prevBoard = chessBoard;
-    chessBoard.makeMove(genMoves.moves[i].move);
-
-    //if (!chessBoard.isSynced()) {
-    //  prevBoard.display(false, cBoardHLight);
-    //  chessBoard.display(false, cBoardHLight);
-    //  system("PAUSE");
-    //}
-    //
-    // system("CLS");
-    // chessBoard.display(false, cBoardHLight);
-    // system("PAUSE");
-
     if (depthCheck == depth) {
-      std::cout << '\n'
-                << chessCache.tileToNotation(genMoves.moves[i].move.moveFrom())
-                << chessCache.tileToNotation(genMoves.moves[i].move.moveTo());
+      std::cout << '\n' << chessBoard.notateMove(genMoves.moves[i].move);
     }
+    chessBoard.makeMove(genMoves.moves[i].move);
     PREFTData branchData = PERFT(chessBoard, depth - 1, depthCheck);
     if (depthCheck == depth) {
       std::cout << ": " << branchData.numPos;
@@ -3013,17 +3027,13 @@ void perftTest(Board &chessBoard) {
     auto start = std::chrono::steady_clock::now();
     PREFTData finaldata = PERFT(chessBoard, d, finalDepth);
     auto endt = std::chrono::steady_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(endt - start)
-            .count();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
     std::cout << '\n' << d << " ply, ";
     std::cout << " " << finaldata.numPos << " nodes,  ";
     std::cout << " " << duration << " ms";
   }
   auto endendt = std::chrono::steady_clock::now();
-  auto totalDuraction = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            endendt - startstart)
-                            .count();
+  auto totalDuraction = std::chrono::duration_cast<std::chrono::milliseconds>(endendt - startstart).count();
   std::cout << "\ntotal time: " << totalDuraction << "ms\n\n";
   system("PAUSE");
 };
@@ -3288,7 +3298,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V6.1";  // VERSION ~1300 elo
+    std::cout << " V6.2";  // VERSION ~1300 elo
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
