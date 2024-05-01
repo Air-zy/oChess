@@ -35,6 +35,7 @@ SOURCES:
 TODO:
 + fix pins?
 + optimize move gen
++ fix negamax
 
 =======================================*/
 
@@ -2836,22 +2837,19 @@ class Board {
       searchRes result;
 
       int ogDepth = 6;
+      result.eval = 0;
       search_BestMove[ogDepth] = Move();
       search_Nodes = 0;
-      search_Depth = 0;
 
-      result.eval = alphaBeta(ogDepth, alpha, beta);
+      result.eval = negamax(ogDepth, alpha, beta);
       //system("PAUSE");
       result.m = search_BestMove[ogDepth];
       result.nodes = search_Nodes;
-      result.depth = search_Depth;
+      result.depth = ogDepth;
       return result;
   };
 
-  int alphaBeta(int depth, int alpha, int beta) {
-    if (depth > search_Depth) {
-      search_Depth = depth;
-    }
+  int negamax(int depth, int alpha, int beta) {
     if (depth == 0) {  // leaf
       return heuristicEval();
     }
@@ -2860,12 +2858,50 @@ class Board {
 
     if (genMoves.amt == 0) {
       if (whiteInCheck()) {  // white checkmated
-        return chessCache.evalWhiteLoss + depth;
+        return chessCache.evalWhiteLoss - depth;
       } else if (blackInCheck()) {
         return chessCache.evalWhiteWins + depth;
       }
       return 0;  // stalemate
     }
+
+    orderMoves(genMoves);
+
+    for (unsigned char i = 0; i < genMoves.amt; ++i) {
+      makeMove(genMoves.moves[i].move);
+      int score = -alphaBeta(depth - 1, -beta, -alpha);
+      unMakeMove(genMoves.moves[i].move);
+      search_Nodes += 1;
+
+      if (score >= beta) {  // cutoff
+        moveHHistory[1][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = (1 << depth);
+        return beta;
+      }
+
+      if (score > alpha) {
+        search_BestMove[depth] = genMoves.moves[i].move;  // store best move
+        alpha = score;
+      }
+    }
+    return alpha;
+  }
+
+  int alphaBeta(int depth, int alpha, int beta) {
+    if (depth == 0) {  // leaf
+      return heuristicEval();
+    }
+    moveList genMoves;
+    generateMoves(genMoves, true);
+
+    if (genMoves.amt == 0) {
+      if (whiteInCheck()) {  // white checkmated
+        return chessCache.evalWhiteLoss - depth;
+      } else if (blackInCheck()) {
+        return chessCache.evalWhiteWins + depth;
+      }
+      return 0;  // stalemate
+    }
+
     orderMoves(genMoves);
     if (turnIndex) { // white turn
       int maxEval = chessCache.evalNegativeInf;
@@ -3252,7 +3288,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V6";  // VERSION ~1300 elo
+    std::cout << " V6.1";  // VERSION ~1300 elo
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
