@@ -441,8 +441,8 @@ class PreComputedCache {
       0, 0,  1,  2,  2,  1,  0,  0,  //
       0, 10, 15, 15, 15, 15, 10, 0,  //
       0, 15, 30, 35, 35, 30, 15, 1,  //
-      2, 15, 35, 40, 40, 35, 15, 2,  //
-      2, 15, 35, 40, 40, 35, 15, 2,  //
+      2, 15, 35, 50, 50, 35, 15, 2,  //
+      2, 15, 35, 50, 50, 35, 15, 2,  //
       0, 15, 30, 35, 35, 30, 15, 1,  //
       0, 10, 15, 15, 15, 15, 10, 0,  //
       0, 0,  1,  2,  2,  1,  0,  0,  //
@@ -462,11 +462,11 @@ class PreComputedCache {
   int pawnPST[2][64] = {
       0,  0,  0,  0,   0,   0,  0,  0,   //
       60, 60, 60, 60,  60,  60, 60, 60,  //
-      10, 10, 20, 30,  30,  20, 10, 10,  //
+      10, 10, 20, 40,  40,  20, 10, 10,  //
       0,  0,  0,  40,  40,  0,  0,  0,   //
-      -5, -5, 10, 40,  40,  -5, -8, -8,  //
-      -5,  0,  5,  0,   0,   -5, 5,  3,   //
-      -5,  0,  -5, -40, -40, 0,  5,  3,   //
+      -5, -5, 10, 30,  30,  -5, -8, -8,  //
+      -5, 0,  5,  0,   0,   -5, 5,  3,   //
+      -5, 0,  -5, -20, -20, 0,  5,  3,   //
       0,  0,  0,  0,   0,   0,  0,  0,   //
   };
 
@@ -484,12 +484,12 @@ class PreComputedCache {
   int horsePST[2][64] = {
       -50, -30, -30, -30, -30, -30, -30, -50,  //
       -40, -20, 15,  0,   0,   15,  -20, -40,  //
-      -30, 0,   15,  15,  15,  15,  0,   -30,  //
+      -30, 0,   20,  20,  20,  20,  0,   -30,  //
       -30, 5,   15,  20,  20,  15,  5,   -30,  //
       -30, 0,   15,  20,  20,  15,  0,   -30,  //
       -30, 5,   20,  15,  15,  20,  5,   -30,  //
       -40, -20, 0,   0,   0,   0,   -20, -40,  //
-      -50, -50, -30, -30, -30, -30, -50, -50,  //
+      -50, -30, -30, -30, -30, -30, -30, -50,  //
   };
 
   int bishopPST[2][64] = {
@@ -1054,6 +1054,7 @@ struct searchRes { // search result
     int eval = 0;
     int nodes = 0;
     int depth = 0;
+    int depthExtended = 0;
 };
 
 class Board {
@@ -2781,10 +2782,10 @@ class Board {
     // imbalance pieces scores
     // bishop pairs
     if (bishops[1].amt >= 2) {
-      eval += 30;
+      eval += 80;
     }
     if (bishops[0].amt >= 2) {
-      eval -= 30;
+      eval -= 80;
     }
 
     // piece square tables
@@ -2835,15 +2836,10 @@ class Board {
     return eval;
   };
 
-  Move search_BestMove[20]; // stores best moves for each [depth]
+  Move search_BestMove;
   int search_Nodes = 0;
   int search_Depth = 0;
-
-  void getBestSearchLine(Move line[20]) const {
-      for (int i = 0; i < 20; ++i) {
-        line[i] = search_BestMove[i];
-      }
-  }
+  int search_ExtendedDepth = 0; // depth reached with extensions
 
   searchRes oSearch(int lockedDepth) {
     int beta = chessCache.evalPositiveInf;
@@ -2857,14 +2853,17 @@ class Board {
 
     if (lockedDepth != 0) {  // if locked depth is set
       depthReached = lockedDepth;
-      search_BestMove[depthReached] = Move();
-      result.eval = alphaBeta(lockedDepth, alpha, beta, 0);
+      search_BestMove.clearMove();
+      result.eval = alphaBeta(lockedDepth, 0, alpha, beta, 0);
     } else {
       auto start = std::chrono::steady_clock::now();
       for (int depth = 1; depth < 100; ++depth) {  // iterative deepening
         depthReached = depth;
-        search_BestMove[depthReached] = Move();
-        result.eval = alphaBeta(depth, alpha, beta, 0);
+        search_BestMove.clearMove();
+        result.eval = alphaBeta(depth, 0, alpha, beta, 0);
+        if (abs(result.eval) >= chessCache.evalWhiteWins) {
+          break;
+        }
         auto endt = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
         if (duration > 1000) {
@@ -2874,9 +2873,10 @@ class Board {
     }
 
     // system("PAUSE");
-    result.m = search_BestMove[depthReached];
+    result.m = search_BestMove;
     result.nodes = search_Nodes;
     result.depth = depthReached;
+    result.depthExtended = search_ExtendedDepth;
     return result;
   };
 
@@ -2906,9 +2906,11 @@ class Board {
     return alpha;
   }
 
-  int alphaBeta(int depth, int alpha, int beta, int numExtensions) {
+  int alphaBeta(int depth, int plyFromRoot, int alpha, int beta, int numExtensions) {
     if (depth == 0) {  // leaf
-      return heuristicEval();  // quiesce(alpha, beta);
+      //return quiesce(alpha, beta);
+      search_ExtendedDepth = plyFromRoot;
+      return heuristicEval();
     }
     moveList genMoves;
     generateMoves(genMoves, true);
@@ -2928,11 +2930,13 @@ class Board {
       for (unsigned char i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0;
-        int score = alphaBeta(depth - 1, alpha, beta, numExtensions + extension);
+        int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
         unMakeMove(genMoves.moves[i].move);
         ++search_Nodes;
         if (score > maxEval) {
-          search_BestMove[depth] = genMoves.moves[i].move; // store best move
+          if (plyFromRoot == 0) {
+            search_BestMove = genMoves.moves[i].move;
+          }
           maxEval = score;
         }
         if (score >= beta) { // fail hard beta-cutoff
@@ -2949,11 +2953,13 @@ class Board {
       for (unsigned char i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0;
-        int score = alphaBeta(depth - 1, alpha, beta, numExtensions + extension);
+        int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
         unMakeMove(genMoves.moves[i].move);
         ++search_Nodes;
         if (score < minEval) {
-          search_BestMove[depth] = genMoves.moves[i].move; // store best move
+          if (plyFromRoot == 0) {
+            search_BestMove = genMoves.moves[i].move;
+          }
           minEval = score;
         }
         if (score <= alpha) { // fail hard alpha-cutoff
@@ -3059,7 +3065,6 @@ void startGame(Board &chessBoard) {
   int waiLockedDepth = 0;
   int baiLockedDepth = 0;
 
-  int amtPossibleMoves = 0;
   do {
     if (!chessBoard.isSynced()) {
       system("PAUSE");
@@ -3067,10 +3072,6 @@ void startGame(Board &chessBoard) {
     system("CLS");
     cBoardHLight.clearBoard();
     chessBoard.display(blackSide, cBoardHLight, aiTxt);
-
-    moveList possibleMoves;
-    chessBoard.generateMoves(possibleMoves, true);
-    amtPossibleMoves = possibleMoves.amt;
 
     if ((chessBoard.turn == pieces.BLACK && blackAI) || (chessBoard.turn == pieces.WHITE && whiteAI)) {
       auto start = std::chrono::steady_clock::now();
@@ -3089,12 +3090,12 @@ void startGame(Board &chessBoard) {
         aiTxt = "  EVAL: " + intToString(minMaxResult.eval) +
                 ",  nodes: " + intToString(minMaxResult.nodes) +
                 ",  time: " + intToString(static_cast<int>(duration)) + "ms" +
-                ",  depth: " + intToString(minMaxResult.depth);
+                ",  depth: " + intToString(minMaxResult.depth) + "/" + intToString(minMaxResult.depthExtended);
         continue;
       } else {
         aiTxt = "[NO MOVE GENERATED] EVAL: " + intToString(minMaxResult.eval) +
                 ",  nodes: " + intToString(minMaxResult.nodes) +
-                ",  depth: " + intToString(minMaxResult.depth);
+                ",  depth: " + intToString(minMaxResult.depth) + "/" + intToString(minMaxResult.depthExtended);
       }
     }
 
@@ -3111,7 +3112,6 @@ void startGame(Board &chessBoard) {
                 << "\"bai\" - toggle black AI\n"
                 << "\"f\" - enter custom fen\n"
                 << "\"reset\" - resets fen to original\n"
-                << "\"bline\" - shows best moves line\n"
                 << "\"baidepth\" - set black ai depth\n"
                 << "\"waidepth\" - set white ai depth\n"
                 << "\n"
@@ -3146,16 +3146,6 @@ void startGame(Board &chessBoard) {
       std::cout << "\n\n";
     } else if (input == "reset") {
       chessBoard.setupFen(chessCache.startingFen);
-    } else if (input == "bline") {
-      Move bLine[20];
-      chessBoard.getBestSearchLine(bLine);
-      for (int i = 19; i > 0; --i){
-        if (!bLine[i].isNull()) {
-            std::cout << "depth: " << i << chessBoard.notateMove(bLine[i]) << '\n';
-        }
-      }
-      std::cout << "\n\n";
-      system("PAUSE");
     } else if (input == "baidepth") {
         std::cout << "depth: ";
         std::cin >> baiLockedDepth;
@@ -3226,9 +3216,6 @@ void startGame(Board &chessBoard) {
       // exits
       break;
     } else {
-      if (possibleMoves.amt == 0) {  // no moves possible
-        break;
-      }
       moveFrom = chessCache.notationToTile(input);
       cBoardHLight.setSquare(moveFrom);
 
@@ -3297,17 +3284,6 @@ void startGame(Board &chessBoard) {
       }
     }
   } while (true);
-  if (amtPossibleMoves == 0) {
-      if (chessBoard.blackInCheck()) {
-        std::cout << "\nWhite wins by CHECKMATE\n\n";
-      } else if (chessBoard.whiteInCheck()) {
-        std::cout << "\nBlack wins by CHECKMATE\n\n";
-      } else {
-        std::cout << "\nSTALEMATE\n\n";
-      }
-    system("PAUSE");
-    chessBoard.setupFen(chessCache.startingFen);
-  }
 }
 
 void allowEmojis() {
@@ -3324,7 +3300,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V6.4";  // VERSION ~1300 elo
+    std::cout << " V6.5";  // VERSION ~1300 elo
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
