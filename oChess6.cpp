@@ -13,7 +13,6 @@ Description(I.P.O):
         -
 
 Assumptions:
-    - requires atleast 64MB to store the transposition tables
     - putting variables in public instead of using setter getter FOR A FASTER SEARCH
     - using smaller variable types like char/short instead of int to save memmory
     - using ++i pre-increment insted of post-increment i++, its abit faster
@@ -34,7 +33,6 @@ SOURCES:
     https://github.com/SebLague/Chess-Coding-Adventure
 
 TODO:
-+ fix transpositions
 + fix pins?
 + optimize move gen
 + fix negamax
@@ -469,9 +467,9 @@ class PreComputedCache {
       60, 60, 60, 60,  60,  60, 60, 60,  //
       10, 10, 20, 40,  40,  20, 10, 10,  //
       0,  0,  0,  40,  40,  0,  0,  0,   //
-      -5, -5, 20, 30,  30,  -5, -8, -8,  //
+      -5, -5, 20, 40,  40,  -5, -8, -8,  //
       -5, 0,  5,  0,   0,   -5, 5,  3,   //
-      -5, 0,  -5, -20, -20, 0,  5,  3,   //
+      -5, 0,  -5, -30, -30, 0,  5,  3,   //
       0,  0,  0,  0,   0,   0,  0,  0,   //
   };
 
@@ -487,14 +485,14 @@ class PreComputedCache {
   };
 
   int horsePST[2][64] = {
-      -50, -30, -30, -30, -30, -30, -30, -50,  //
+      -80, -30, -30, -30, -30, -30, -30, -80,  //
       -40, -20, 15,  0,   0,   15,  -20, -40,  //
       -30, 0,   20,  20,  20,  20,  0,   -30,  //
       -30, 5,   15,  20,  20,  15,  5,   -30,  //
       -30, 0,   15,  20,  20,  15,  0,   -30,  //
       -30, 5,   20,  15,  15,  20,  5,   -30,  //
       -40, -20, 0,   0,   0,   0,   -20, -40,  //
-      -50, -30, -30, -30, -30, -30, -30, -50,  //
+      -80, -50, -30, -30, -30, -30, -50, -80,  //
   };
 
   int bishopPST[2][64] = {
@@ -514,7 +512,7 @@ class PreComputedCache {
       -5, 0,  0,  0,  0,  0,  0,  -5,  //
       -5, 0,  0,  0,  0,  0,  0,  -5,  //
       0,  0,  0,  0,  0,  0,  0,  0,   //
-      -5, 0,  0,  0,  0,  0,  0,  -5,  //
+      -5, 0,  5,  5,  5,  5,  0,  -5,  //
       -5, -5, 5,  8,  8,  5,  -5, -5,  //
   };
 
@@ -527,7 +525,7 @@ class PreComputedCache {
       -50, -50, -50, -40, -40, -40, -50, -50,  //
       -40, -40, -50, -40, -40, -50, -40, -40,  //
       -5,  5,   -10, -30, -30, -30, 0,   -5,   //
-      -5,  5,   5,   -30, -5,  -10, 5,   -5,   //
+      -10,  5,   5,   -30, -5,  -10, 5,   -14,   //
   };
 
   BitBoard checkerBB;
@@ -935,117 +933,6 @@ class PreComputedCache {
 
 const PreComputedCache chessCache;
 
-class TranspositionTables {
- private:
-  class Entry {
-   public:
-    uint64_t key = 0;
-    int value;
-    Move move;
-    uint8_t depth;
-    uint8_t nodeType;
-
-    Entry(uint64_t pre_key, int pre_value, uint8_t pre_depth, uint8_t pre_nodeType, Move pre_move) {
-      key = pre_key;
-      value = pre_value;
-      move = pre_move;
-      depth = pre_depth;
-      nodeType = pre_nodeType;
-    };
-    Entry() {
-      key = 0;
-      value = 0;
-      nodeType = 0;
-      depth = 0;
-      move = Move();
-    }
-  };
-
-  const unsigned long long totalSizeBytes = 1048576;//static_cast<unsigned long long>(1024) * 1024;
-
- public:
-  const int LookupFailed = -1;
-  
-  // The value for this position is the exact evaluation
-  const int Exact = 0;
-  // A move was found during the search that was too good, meaning the opponent
-  // will play a different move earlier on, not allowing the position where this
-  // move was available to be reached. Because the search cuts off at this point
-  // (beta cut-off), an even better move may exist. This means that the
-  // evaluation for the position could be even higher, making the stored value
-  // the lower bound of the actual value.
-  const int LowerBound = 1;
-  // No move during the search resulted in a position that was better than the
-  // current player could get from playing a different move in an earlier
-  // position (i.e eval was <= alpha for all moves in the position). Due to the
-  // way alpha-beta search works, the value we get here won't be the exact
-  // evaluation of the position, but rather the upper bound of the evaluation.
-  // This means that the evaluation is, at most, equal to this value.
-  const int UpperBound = 2;
-  
-  Entry exampleEntry;
-  Entry *entries = nullptr;
-
-  //
-  uint64_t count = 0;
-  uint64_t writeCount = 0;
-  uint64_t Index(uint64_t &zKey) const { return zKey % count; }
-
-  TranspositionTables() {
-    std::size_t wantedSizeInMb = 1000;
-    int sizeOfEntry = sizeof(Entry);
-    // calculate how many entries will equal to 64 mbs
-    std::size_t numEntries = wantedSizeInMb * (totalSizeBytes / sizeOfEntry);  // Convert MB to bytes
-    std::cout << "  - Transposition Table -\n\n";
-    std::cout << "1Entry Size: " << sizeOfEntry << " bytes\n";
-    std::cout << "Num Entires: " << numEntries << '\n';
-    count = numEntries;
-    entries = new Entry[numEntries];
-    std::cout << "Total Size: " << ((numEntries * sizeOfEntry)/totalSizeBytes) << " mb\n";
-    system("PAUSE");
-  };
-
-  ~TranspositionTables() {
-    delete[] entries;  // free
-  }
-
-  Move TryGetStoredMove(uint64_t &zKey) {
-    return entries[Index(zKey)].move;
-  }
-
-  int LookupEvaluation(int depth, int alpha, int beta, uint64_t &zKey) {
-    Entry entry = entries[Index(zKey)];
-    if (entry.key == zKey) {
-      int score = 0;
-      // Only use stored evaluation if it has been searched to at least the same
-      // depth as would be searched now
-      if (entry.depth >= depth) {
-        return entry.value;
-      }
-
-      // We have stored the upper bound of the eval for this position. If it's
-      // less than alpha then we don't need to search the moves in this position
-      // as they won't interest us; otherwise we will have to search to find the
-      // exact value
-      if (entry.nodeType == UpperBound && score <= alpha) {
-        return entry.value;
-      }
-
-      // We have stored the lower bound of the eval for this position. Only
-      // return if it causes a beta cut-off.
-      if (entry.nodeType == LowerBound && score >= beta) {
-        return entry.value;
-      }
-    }
-
-    return LookupFailed;
-  };
-
-  void StoreEvaluation(int depth, int eval, Move move, int evalType, uint64_t &zKey) {
-    entries[Index(zKey)] = Entry(zKey, eval, depth, evalType, move);
-  };
-};
-
 struct movePair {
   int score = 0;
   Move move;
@@ -1203,7 +1090,6 @@ class Board {
   const unsigned short whiteCastleMask = whiteCastleKingsideMask & whiteCastleQueensideMask;
   const unsigned short blackCastleMask = blackCastleKingsideMask & blackCastleQueensideMask;
 
-  TranspositionTables transTables;
   // prev moves, only used for display
   Move prevMove;
 
@@ -2524,14 +2410,14 @@ class Board {
     uint64_t zobristKey = 0;
     for (int i = 0; i < 64; ++i) {
       int pieceType = pieces.type(board[i]);
-      int pieceCol = pieces.color(board[i]);
-      if (pieceCol == pieces.WHITE) {
-        pieceCol = 0;
-      } else {
-        pieceCol = 1;
-      }
       if (pieceType != pieces.EMPTY) { // if not 0/EMPTY
         // xor together
+        int pieceCol = pieces.color(board[i]);
+        if (pieceCol == pieces.WHITE) {
+            pieceCol = 0;
+        } else {
+            pieceCol = 1;
+        }
         zobristKey ^= chessCache.zobristLookup[i][pieceCol][pieceType-1]; // -1 cuz EMPTY is ignored in zobrist lookup
       }
     }
@@ -2551,7 +2437,7 @@ class Board {
     checkCount = 0;
     checkRay.clearBoard();
     blockRay.clearBoard();
-    
+
     if (whiteInCheck()) {
       boolWhiteCheck = true;
     } else if (blackInCheck()) {
@@ -2899,7 +2785,7 @@ class Board {
     eval -= rooks[0].amt * chessCache.rookValue;
     eval += queens[1].amt * chessCache.queenValue;
     eval -= queens[0].amt * chessCache.queenValue;
-    
+
     // guard and threats scores
     eval += whiteAtks.populationCountBAND(allPieces.get());
     eval -= blackAtks.populationCountBAND(allPieces.get());
@@ -2997,7 +2883,7 @@ class Board {
         }
         auto endt = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - start).count();
-        if (duration > 100) {
+        if (duration > 1000) {
           break;
         }
       }
@@ -3038,15 +2924,6 @@ class Board {
   }
 
   int alphaBeta(int depth, int plyFromRoot, int alpha, int beta, int numExtensions) {
-    int ttVal = transTables.LookupEvaluation(depth, alpha, beta, zobristKey); // tt lookup
-    if (ttVal != transTables.LookupFailed) {
-      if (plyFromRoot == 0) {
-        search_BestMove = transTables.TryGetStoredMove(zobristKey);
-      }
-      //std::cout << "use, " << ttVal << ", depth: " << depth << '\n';
-      return ttVal;
-    }
-
     if (depth == 0) {  // leaf
       search_ExtendedDepth = plyFromRoot;
       return heuristicEval();
@@ -3066,14 +2943,14 @@ class Board {
 
     orderMoves(genMoves);
 
-    Move bestMoveInThisPos;
-
     if (turnIndex) { // white turn
-      int evaluationBound = transTables.UpperBound;
       int maxEval = chessCache.evalNegativeInf;
       for (unsigned char i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0;
+        if (i > 12 && depth > 1 && extension == 0) {
+            extension = -1;
+        }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
         unMakeMove(genMoves.moves[i].move);
         ++search_Nodes;
@@ -3084,24 +2961,22 @@ class Board {
           maxEval = score;
         }
         if (score >= beta) { // fail hard beta-cutoff
-          transTables.StoreEvaluation(depth, maxEval, genMoves.moves[i].move, transTables.UpperBound, zobristKey);
           moveHHistory[1][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = (1 << depth);
           return beta;
         }
         if (score > alpha) { // found new best move in this position
-          evaluationBound = transTables.Exact;
-          bestMoveInThisPos = genMoves.moves[i].move;
           alpha = score;
         }
       }
-      transTables.StoreEvaluation(depth, maxEval, bestMoveInThisPos, evaluationBound, zobristKey);
       return maxEval;
     } else { // black turn
-      int evaluationBound = transTables.UpperBound;
       int minEval = chessCache.evalPositiveInf;
       for (unsigned char i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0;
+        if (i > 12 && depth > 1 && extension == 0) {
+            extension = -1;
+        }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
         unMakeMove(genMoves.moves[i].move);
         ++search_Nodes;
@@ -3112,17 +2987,13 @@ class Board {
           minEval = score;
         }
         if (score <= alpha) { // fail hard alpha-cutoff
-          transTables.StoreEvaluation(depth, minEval, genMoves.moves[i].move, transTables.LowerBound, zobristKey);
           moveHHistory[0][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = (1 << depth);
           return alpha;
         }
         if (score < beta) { // found new best move in this position
-          evaluationBound = transTables.Exact;
-          bestMoveInThisPos = genMoves.moves[i].move;
           beta = score;
         }
       }
-      transTables.StoreEvaluation(depth, minEval, bestMoveInThisPos, evaluationBound, zobristKey);
       return minEval;
     }
   }
@@ -3449,7 +3320,7 @@ int main() {
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
     setTxtColor(chessCache.greyLetCol);
-    std::cout << " V6.6";  // VERSION ~1300 elo
+    std::cout << " V6.7";  // VERSION ~1300 elo
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
