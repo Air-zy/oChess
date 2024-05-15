@@ -2966,7 +2966,7 @@ class Board {
         }
         auto endt = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - search_start).count();
-        if (duration > 6000) {
+        if (duration > 1000) {
           break;
         }
       }
