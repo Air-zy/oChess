@@ -48,41 +48,22 @@ TODO:
 #include <cstdint>    // For UINT64_MAX and var types
 #include <random>     // for random uint64 numbers
 
+/* transitively used includes
+#include <stdlib.h>
+#include <consoleapi2.h>
+#include <processenv.h>
+#include <WinNls.h>
+#include <cctype>
+*/
+
 void setTxtColor(int colorValue);
+void printUint32Binary(uint32_t num);
 std::string intToString(int num);
 std::string toLowercase(std::string input);
-
-void printUint32Binary(uint32_t num) {
-  for (int i = sizeof(num) * 8 - 1; i >= 0; --i) {
-    std::cout << ((num >> i) & 1);
-    if (i % 4 == 0) std::cout << " ";
-  }
-}
-
-// just reverses/like/this --> sesrever/ekil/siht
-std::string invertFen(const std::string str) {
-  std::string reversedStr = "";
-  std::string word = "";
-  for (char c : str) {
-    if (c != '/') {
-      word += c;
-    } else {
-      for (int i = static_cast<int>(word.length()) - 1; i >= 0; i--) {
-        reversedStr += word[i];
-      }
-      reversedStr += '/';
-      word = "";
-    }
-  }
-  for (int i = static_cast<int>(word.length()) - 1; i >= 0; i--) {
-    reversedStr += word[i];
-  }
-  return reversedStr;
-}
+std::string invertFen(const std::string str);
 
 // instead of using boolean array
-// 1ULL = 00000000 00000000 00000000 00000000 00000000 00000000 00000000
-// 00000001
+// 1ULL = 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000001
 class BitBoard {
  private:
   uint64_t bitBoard = 0;  // 64 bits
@@ -100,9 +81,10 @@ class BitBoard {
     return (bitBoard >> square) & 1;  // check if the bit corresponding to the square is set
   };
 
-  inline void clearBoard() {
-    bitBoard = 0;  // clear the entire bitboard
-  };
+  inline void clearBoard() { bitBoard = 0; }; // clear the entire bitboard
+  inline uint64_t get() const { return bitBoard; }; // get bb
+  inline void set(uint64_t bb) { bitBoard = bb; }; // set bb
+  inline bool isEmpty() const { return bitBoard == 0; };
 
   // Population count (Hamming weight) function
   inline int populationCount() const {
@@ -131,15 +113,11 @@ class BitBoard {
     return x & 0x7F;    // return only the least significant 7 bits (to handle overflow)
   }
 
-  inline uint64_t get() const { return bitBoard; };
-  inline void set(uint64_t bb) { bitBoard = bb; };
-
-  inline bool isEmpty() const { return bitBoard == 0; };
-
   BitBoard() {};
   BitBoard(uint64_t &newbb) { bitBoard = newbb; };
 };
 
+// lookup class
 class PieceCache {
  private:
   const uint8_t TYPE_MASK = 0b111;    // 7
@@ -218,8 +196,10 @@ class PieceCache {
   }
 };
 
+// defining my lookup
 const PieceCache pieces;
 
+// lookup class
 struct MoveCache {
   // Masks
   const unsigned short fromTileMask = 0b0000000000111111;
@@ -242,6 +222,7 @@ struct MoveCache {
   const unsigned short Null = 0b0000000000000000;
 };
 
+// defining my lookup
 const MoveCache moveFlags;
 
 // Compact (16 bit) move representation to preserve memory during search.
@@ -294,6 +275,28 @@ class Move {
   }
 };
 
+// lookup cache for colors
+struct globalColors {
+  // visual colors
+  const uint8_t hlightCol = 240;  // White background Black text
+  uint8_t wBlackCol = 128;        // Gray background black letter
+  uint8_t wWhiteCol = 143;        // Gray background white letter
+  uint8_t bWhiteCol = 15;         // Black background white latter
+  uint8_t bBlackCol = 8;          // Black background gray letter
+  const uint8_t greyLetCol = 8;   // Black background gray letter
+
+  // green previous move
+  const uint8_t prevMBlackCol = 32;
+  const uint8_t prevMWhiteCol = 47;
+
+  // red check color
+  const uint8_t checkBlackCol = 207;  // 64;
+  const uint8_t checkWhiteCol = 192;  // 79;
+};
+
+globalColors chessColors;
+
+// biggest lookup class
 class PreComputedCache {
  private:
   uint8_t rowColValues[8][8];  // each element of [row][col] is a tile
@@ -336,22 +339,6 @@ class PreComputedCache {
     return 0;  // ??? impossible
   };
 
-  // visual colors
-  static const uint8_t hlightCol = 240;  // White background Black text
-  static const uint8_t wBlackCol = 128;  // Gray background black letter
-  static const uint8_t wWhiteCol = 143;  // Gray background white letter
-  static const uint8_t bWhiteCol = 15;   // Black background white latter
-  static const uint8_t bBlackCol = 8;    // Black background gray letter
-  static const uint8_t greyLetCol = 8;   // Black background gray letter
-
-  // green previous move
-  static const uint8_t prevMBlackCol = 32;
-  static const uint8_t prevMWhiteCol = 47;
-
-  // red check color
-  static const uint8_t checkBlackCol = 207;  // 64;
-  static const uint8_t checkWhiteCol = 192;  // 79;
-
   // pre-compute pseudo legal moves for each tile
   Move bPawnMoves[64][8];  // 2 max possible moves 2 diagonal takes + promotions
   Move wPawnMoves[64][8];  // 2 max possible moves 2 diagonal takes + promotions
@@ -374,7 +361,7 @@ class PreComputedCache {
   BitBoard rays1Extra[64][64];  // [fromtile][totile] but 1 extra to preventKingMoves
 
   // distances between tiles
-  int distances[64][64];  // [fromtile][totile]
+  unsigned int distances[64][64];  // [fromtile][totile]
 
   // normal rook tiles
   const uint8_t whiteKingRook = 7;
@@ -383,20 +370,20 @@ class PreComputedCache {
   const uint8_t blackQueenRook = 56;
 
   // castled rook tiles
-  static const uint8_t whiteKingRookCastleTo = 5;
-  static const uint8_t whiteQueenRookCastleTo = 3;
-  static const uint8_t blackKingRookCastleTo = 61;
-  static const uint8_t blackQueenRookCastleTo = 59;
+  const uint8_t whiteKingRookCastleTo = 5;
+  const uint8_t whiteQueenRookCastleTo = 3;
+  const uint8_t blackKingRookCastleTo = 61;
+  const uint8_t blackQueenRookCastleTo = 59;
 
   // castled king tiles
-  static const uint8_t whiteKingCastleTo = 6;
-  static const uint8_t whiteQueenCastleTo = 2;
-  static const uint8_t blackKingCastleTo = 62;
-  static const uint8_t blackQueenCastleTo = 58;
+  const uint8_t whiteKingCastleTo = 6;
+  const uint8_t whiteQueenCastleTo = 2;
+  const uint8_t blackKingCastleTo = 62;
+  const uint8_t blackQueenCastleTo = 58;
 
   // queen side vacant tiles - tiles in where it has to be empty to allow castling
-  static const uint8_t whiteQueenCastleVacant = 1;
-  static const uint8_t blackQueenCastleVacant = 57;
+  const uint8_t whiteQueenCastleVacant = 1;
+  const uint8_t blackQueenCastleVacant = 57;
 
   std::string startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   std::string notatedTiles[64];  // lookup array for tile notations
@@ -420,7 +407,6 @@ class PreComputedCache {
   static const int bishopValue = 300 * 10;
   static const int rookValue = 500 * 10;
   static const int queenValue = 900 * 10;
-  // mult 2
 
   // in 1 Million
   static const int evalPositiveInf = 1000000;
@@ -445,10 +431,10 @@ class PreComputedCache {
   int statOrdPST[64] = {
       0, 0, 1, 2,  2,  1, 0, 0,  //
       0, 1, 2, 4,  4,  2, 1, 0,  //
-      1, 4, 8, 6,  6,  8, 4, 1,  //
+      1, 4, 9, 6,  6,  9, 4, 1,  //
       2, 8, 8, 10, 10, 8, 8, 2,  //
       2, 8, 8, 10, 10, 8, 8, 2,  //
-      1, 4, 8, 6,  6,  8, 4, 1,  //
+      1, 4, 9, 6,  6,  9, 4, 1,  //
       0, 1, 2, 4,  4,  2, 1, 0,  //
       0, 0, 1, 2,  2,  1, 0, 0,  //
   };
@@ -467,7 +453,7 @@ class PreComputedCache {
   int pawnEndPST[2][64] = {
       0,  0,  0,  0,  0,  0,  0,  0,   //
       90, 90, 90, 80, 80, 90, 90, 90,  //
-      50, 50, 50, 40, 40, 50, 50, 50,  //
+      80, 80, 80, 80, 80, 80, 80, 80,  //
       30, 30, 30, 20, 20, 30, 30, 30,  //
       20, 20, 20, 20, 20, 20, 20, 20,  //
       15, 15, 15, 15, 15, 15, 15, 15,  //
@@ -548,7 +534,7 @@ class PreComputedCache {
 
   // generates random uint 64number controlled by seed
   uint64_t RandUINT64(uint64_t seed) const {
-    std::mt19937_64 gen(seed);
+    std::mt19937_64 gen(seed); // Mersenne Twister algorithm
     return gen();
   }
 
@@ -938,13 +924,13 @@ class PreComputedCache {
   };
 };
 
-const PreComputedCache chessCache;
+// defining big lookup class
+const PreComputedCache chessCache; // uses atleast like 0.9 MB
 
 struct movePair {
   int score = 0;
   Move move;
 };
-
 struct moveList {
   movePair moves[218];  // 218 max moves in chess
   uint8_t amt = 0;
@@ -1008,7 +994,7 @@ class pieceList {
 class gameStateStack {
  private:
   static const int maxSize = 400;
-  uint32_t gameStateHistory[maxSize] = {0b0000000000000000};  // Array to hold game states
+  uint32_t gameStateHistory[maxSize] = {0};  // Array to hold game states
   int top;
 
  public:
@@ -1059,7 +1045,7 @@ class TranspositionTables {
   const std::size_t wantedSizeInMb = 512; // SIZE OF TRANSPOSITION TABLE
   const unsigned long long sizeOf1MB = 1048576;  // static_cast<unsigned long long>(1024) * 1024;
  public:
-  const int LookupFailed = -1;
+  const int LookupFailed = -2000000;
 
   Entry *entries = nullptr; // index using [zobrist % totalNumEntries]
   uint64_t totalNumEntries = 0;
@@ -1207,7 +1193,7 @@ class Board {
   // Bits 8-13 captured piece
   // Bits 14-... fifty mover counter
   gameStateStack gameStateHistory;
-  uint32_t currentGameState = 0b0000000000000000;
+  uint32_t currentGameState = 0;
   bool whiteKingSideCastle() const {
     return (currentGameState & whiteCastleKingsideBit);
   };
@@ -1601,48 +1587,48 @@ class Board {
       }
       int row2 = chessCache.preComputedRows[i2];
       if (chessCache.preComputedCols[i] == 0) {
-        setTxtColor(chessCache.greyLetCol);
+        setTxtColor(chessColors.greyLetCol);
         std::cout << (row2 + 1) << '|';
       }
 
       if (highlights.isSet(i2)) {
-        setTxtColor(chessCache.hlightCol);
+        setTxtColor(chessColors.hlightCol);
       } else {
         int pieceColor = pieces.color(board[i2]) == 0 ? 0 : 1;
         if (chessCache.colorOfSquare(i2)) {
-          setTxtColor(pieceColor == 0 ? chessCache.wWhiteCol: chessCache.wBlackCol);
+          setTxtColor(pieceColor == 0 ? chessColors.wWhiteCol: chessColors.wBlackCol);
         } else {
-          setTxtColor(pieceColor == 0 ? chessCache.bWhiteCol: chessCache.bBlackCol);
+          setTxtColor(pieceColor == 0 ? chessColors.bWhiteCol: chessColors.bBlackCol);
         };
 
         if (!prevMove.isNull() &&(prevMove.moveFrom() == i2 || prevMove.moveTo() == i2)) {
           if (pieces.color(board[prevMove.moveTo()]) == pieces.WHITE) {
-            setTxtColor(chessCache.prevMWhiteCol);
+            setTxtColor(chessColors.prevMWhiteCol);
           } else {
-            setTxtColor(chessCache.prevMBlackCol);
+            setTxtColor(chessColors.prevMBlackCol);
           }
         }
 
         if (checkCount != 0) {
           if (i2 == whiteKing && checkRay.isSet(i2)) {
-            setTxtColor(chessCache.checkBlackCol);
+            setTxtColor(chessColors.checkBlackCol);
           }
           if (i2 == blackKing && checkRay.isSet(i2)) {
-            setTxtColor(chessCache.checkWhiteCol);
+            setTxtColor(chessColors.checkWhiteCol);
           }
         }
 
         if (blockRay.isSet(i2)) {
           if (pieces.color(board[i2]) == pieces.WHITE) {
-            setTxtColor(chessCache.checkBlackCol);
+            setTxtColor(chessColors.checkBlackCol);
           } else {
-            setTxtColor(chessCache.checkWhiteCol);
+            setTxtColor(chessColors.checkWhiteCol);
           }
         }
       }
       std::cout << pieces.toUnicode(pieces.type(board[i2])) << " ";
       if ((i + 1) % 8 == 0) {
-        setTxtColor(chessCache.greyLetCol);
+        setTxtColor(chessColors.greyLetCol);
         if (chessCache.preComputedRows[i] == 0) {
           std::cout << "  ply: " << plyCount;
           std::cout << ", ";
@@ -1676,7 +1662,7 @@ class Board {
         std::cout << '\n';
       }
     }
-    setTxtColor(chessCache.greyLetCol);
+    setTxtColor(chessColors.greyLetCol);
     std::cout << "  a b c d e f g h\n";
     setTxtColor(15);
   };
@@ -1728,8 +1714,7 @@ class Board {
   };
 
   void addPLegal(moveList &ML, const Move &m) const {
-    if (genQuiets == false &&
-        !isCapture(m)) {  // remove if not capture in captures only
+    if (genQuiets == false && !isCapture(m)) {  // remove if not capture in captures only
       return;
     }
 
@@ -2880,8 +2865,13 @@ class Board {
     // mobility scores
     uint8_t whitepop = whiteAtks.populationCount();
     uint8_t blackpop = blackAtks.populationCount();
-    eval += whitepop;
-    eval -= blackpop;
+    if (fiftyMoveCounter > 4) {
+      eval += whitepop << 1;
+      eval -= blackpop << 1;
+    } else {
+      eval += whitepop;
+      eval -= blackpop;
+    }
 
     // imbalance pieces scores
     // bishop pairs
@@ -2893,7 +2883,7 @@ class Board {
     }
 
     // piece square tables
-    if (((whitepop + blackpop) < 50 && plyCount > 16) || fiftyMoveCounter > 20) {  // endgame determin
+    if (((whitepop + blackpop) < 50 && plyCount > 16) || fiftyMoveCounter > 10) {  // endgame determin
       for (int i = 0; i < pawns[0].amt; ++i) {
         eval -= chessCache.pawnEndPST[0][pawns[0].pieces[i]];
         eval += chessCache.distances[blackKing][pawns[0].pieces[i]];  // less value if far away from king
@@ -2936,7 +2926,6 @@ class Board {
     for (int i = 0; i < rooks[1].amt; ++i) {
       eval += chessCache.rookPST[1][rooks[1].pieces[i]];
     }
-
     return eval;
   };
 
@@ -2961,12 +2950,13 @@ class Board {
       search_BestMove.clearMove();
       result.eval = alphaBeta(lockedDepth, 0, alpha, beta, 0);
     } else {
-      //transTables.clearTT();
+      transTables.clearTT(); // clear per move FOR NOW
       search_start = std::chrono::steady_clock::now();
       for (int depth = 1; depth < 100; ++depth) {  // iterative deepening
         depthReached = depth;
         search_BestMove.clearMove();
         result.eval = alphaBeta(depth, 0, alpha, beta, 0);
+        setTxtColor(chessColors.greyLetCol);
         std::cout << "depth: " << depth
                   << ", " << notateMove(search_BestMove)
                   << ", eval: " << result.eval << '\n';
@@ -2976,7 +2966,7 @@ class Board {
         }
         auto endt = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endt - search_start).count();
-        if (duration > 2000) {
+        if (duration > 6000) {
           break;
         }
       }
@@ -3016,9 +3006,10 @@ class Board {
     return alpha;
   }
 
+  // recursion
   int alphaBeta(int depth, int plyFromRoot, int alpha, int beta, int numExtensions) {
     int ttScore = transTables.lookupEval(zobristKey, depth);
-    if (ttScore != transTables.LookupFailed && plyFromRoot > 0) {
+    if (ttScore != transTables.LookupFailed) {
       if (plyFromRoot == 0) {
         search_BestMove = transTables.lookupBMove(zobristKey);
       }
@@ -3049,7 +3040,7 @@ class Board {
       for (uint8_t i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0; // check extension
-        if (genMoves.moves[i].score < -20 && depth > 1 && extension == 0) { // late move reduction
+        if ((genMoves.moves[i].score < -10 || i > 20) && depth > 1 && extension == 0) { // late move reduction
             extension = -1;
         }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
@@ -3077,7 +3068,7 @@ class Board {
       for (uint8_t i = 0; i < genMoves.amt; ++i) {
         makeMove(genMoves.moves[i].move);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0; // check extension
-        if (genMoves.moves[i].score < -20 && depth > 1 && extension == 0) { // late move reduction
+        if ((genMoves.moves[i].score < -10 || i > 20) && depth > 1 && extension == 0) { // late move reduction
             extension = -1;
         }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
@@ -3415,6 +3406,7 @@ void startGame(Board &chessBoard) {
   } while (true);
 }
 
+// VISUALS!!
 void allowEmojis() {
   // Sets Encoding to UTF8 - for chess pieces ASCII
   SetConsoleOutputCP(CP_UTF8);  // for visuals
@@ -3428,17 +3420,18 @@ int main() {
     system("CLS");
     std::cout << " " << pieces.toUnicode(pieces.PAWN) << " CHESS MENU "
               << pieces.toUnicode(pieces.PAWN);
-    setTxtColor(chessCache.greyLetCol);
-    std::cout << " V7.0";  // VERSION ~1600 elo
+    setTxtColor(chessColors.greyLetCol);
+    std::cout << " V7.1";  // VERSION ~1600 elo
     setTxtColor(15);
     std::cout << "\n______________________\n";
     std::cout << "\n[p] Play";
-    setTxtColor(chessCache.greyLetCol);
+    setTxtColor(chessColors.greyLetCol);
     std::cout << " (input \"help\" for commands) ";
     setTxtColor(15);
-    std::cout << "\n[t] Performance Test"
+    std::cout << "\n[v] Visuals"
+              << "\n[t] Performance Test"
               << "\n[f] Custom Fen";
-    setTxtColor(chessCache.greyLetCol);
+    setTxtColor(chessColors.greyLetCol);
     std::cout << " (starting position) ";
     setTxtColor(15);
     std::cout << "\n[e] Exit" << '\n';
@@ -3448,6 +3441,38 @@ int main() {
 
     if (input == "p") {
       startGame(chessBoard);
+    } else if (input == "v") {
+      std::cout << "[1] [standard]\n";
+      std::cout << "[2] blue vs red [no checkers]\n";
+      std::cout << "[3] test all colors\n";
+      std::cin >> input;
+      if (input == "1") {
+        chessColors.wBlackCol = 128;  // Gray background black letter
+        chessColors.wWhiteCol = 143;  // Gray background white letter
+        chessColors.bWhiteCol = 15;   // Black background white latter
+        chessColors.bBlackCol = 8;    // Black background gray letter
+      } else if (input == "2") {
+        chessColors.wBlackCol = 12;
+        chessColors.wWhiteCol = 11;
+        chessColors.bWhiteCol = 11;
+        chessColors.bBlackCol = 12;
+      } else if (input == "3") {
+        for (int i = 0; i < 16; ++i) {
+          for (int x = 0; x < 16; ++x) {
+            int color = i*16 + x;
+            setTxtColor(color);
+            std::cout << color;
+            if (color <= 9) {
+              std::cout << "  ";
+            } else if (color <= 99) {
+              std::cout << " ";
+            }
+            setTxtColor(15);
+          }
+          std::cout << '\n';
+        }
+        system("PAUSE");
+      }
     } else if (input == "t") {
       // perft test
       perftTest(chessBoard);
@@ -3483,4 +3508,32 @@ std::string toLowercase(std::string input) {
     }
   }
   return input;
+}
+
+void printUint32Binary(uint32_t num) {
+  for (int i = sizeof(num) * 8 - 1; i >= 0; --i) {
+    std::cout << ((num >> i) & 1);
+    if (i % 4 == 0) std::cout << " ";
+  }
+}
+
+// just reverses/like/this --> sesrever/ekil/siht
+std::string invertFen(const std::string str) {
+  std::string reversedStr = "";
+  std::string word = "";
+  for (char c : str) {
+    if (c != '/') {
+      word += c;
+    } else {
+      for (int i = static_cast<int>(word.length()) - 1; i >= 0; i--) {
+        reversedStr += word[i];
+      }
+      reversedStr += '/';
+      word = "";
+    }
+  }
+  for (int i = static_cast<int>(word.length()) - 1; i >= 0; i--) {
+    reversedStr += word[i];
+  }
+  return reversedStr;
 }
