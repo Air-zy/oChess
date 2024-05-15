@@ -58,8 +58,8 @@ TODO:
 
 void setTxtColor(int colorValue);
 void printUint32Binary(uint32_t num);
+void toLowercase(std::string &input);
 std::string intToString(int num);
-std::string toLowercase(std::string input);
 std::string invertFen(const std::string str);
 
 // instead of using boolean array
@@ -1110,12 +1110,12 @@ class TranspositionTables {
 };
 
 // Function to allocate memory for moveHHistory array
-int ***allocateMoveHHistory() {
-  int ***moveHHistory = new int **[2];  // Allocate memory for the first dimension (white or black)
+uint16_t ***allocateMoveHHistory() {
+  uint16_t ***moveHHistory = new uint16_t **[2];  // Allocate memory for the first dimension (white or black)
   for (int i = 0; i < 2; ++i) {
-    moveHHistory[i] = new int *[64];  // Allocate memory for the second dimension
+    moveHHistory[i] = new uint16_t *[64];  // Allocate memory for the second dimension
     for (int j = 0; j < 64; ++j) {
-      moveHHistory[i][j] = new int[64];  // Allocate memory for the third dimension
+      moveHHistory[i][j] = new uint16_t[64];  // Allocate memory for the third dimension
       // Initialize elements to zero
       for (int k = 0; k < 64; ++k) {
         moveHHistory[i][j][k] = 0;
@@ -1126,7 +1126,7 @@ int ***allocateMoveHHistory() {
 }
 
 // Function to deallocate memory for moveHHistory array
-void deallocateMoveHHistory(int ***moveHHistory) {
+void deallocateMoveHHistory(uint16_t ***moveHHistory) {
   for (int i = 0; i < 2; ++i) {
     for (int j = 0; j < 64; ++j) {
       delete[] moveHHistory[i][j];  // Deallocate memory for the third dimension
@@ -1272,7 +1272,7 @@ class Board {
 
   // for move oredring
   //int moveHHistory[2][64][64] = {0};  // heuristic history
-  int ***moveHHistory = allocateMoveHHistory(); // 3d pointer array
+  uint16_t ***moveHHistory = allocateMoveHHistory();  // 3d pointer array
 
   void getpinMasks(BitBoard pmasks[2][8]) const {
     for (int d = 0; d < 8; ++d) {
@@ -3054,7 +3054,7 @@ class Board {
           maxEval = score;
         }
         if (score >= beta) { // fail hard beta-cutoff
-          moveHHistory[1][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = (1 << depth);
+          moveHHistory[1][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = depth*depth;
           return beta;
         }
         if (score > alpha) { // found new best move in this position
@@ -3082,7 +3082,7 @@ class Board {
           minEval = score;
         }
         if (score <= alpha) { // fail hard alpha-cutoff
-          moveHHistory[0][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = (1 << depth);
+          moveHHistory[0][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = depth*depth;
           return alpha;
         }
         if (score < beta) { // found new best move in this position
@@ -3226,7 +3226,7 @@ void startGame(Board &chessBoard) {
     std::cout << "input: ";
     std::cin >> input;
 
-    input = toLowercase(input);
+    toLowercase(input);
     if (input == "help") {
       std::cout << "\n -> COMMANDS <-\n"
                 << "\"exit\" - exit current game\n"
@@ -3376,7 +3376,7 @@ void startGame(Board &chessBoard) {
                   << "[b] " << pieces.toUnicode(pieces.BISHOP) << " Bishop\n"
                   << "[n] " << pieces.toUnicode(pieces.KNIGHT) << " Knight\n";
         std::cin >> input;
-        input = toLowercase(input);
+        toLowercase(input);
         if (input == "r") {
           chessBoard.makeMove(Promotes.moves[1].move);
           previousMoves[chessBoardPly] = Promotes.moves[1].move;
@@ -3437,7 +3437,7 @@ int main() {
     std::cout << "\n[e] Exit" << '\n';
 
     std::cin >> input;
-    input = toLowercase(input);
+    toLowercase(input);
 
     if (input == "p") {
       startGame(chessBoard);
@@ -3501,13 +3501,12 @@ std::string intToString(int num) {
   return num < 0 ? "-" + std::to_string(-num) : std::to_string(num);
 }
 
-std::string toLowercase(std::string input) {
-  for (size_t i = 0; i < input.length(); ++i) {
-    if (input[i] >= 'A' && input[i] <= 'Z') {
-      input[i] = input[i] + 32;  // Convert uppercase letter to lowercase
+void toLowercase(std::string &input) {
+  for (char &c : input) {
+    if (c >= 'A' && c <= 'Z') {
+      c += 32;  // Convert uppercase letter to lowercase
     }
   }
-  return input;
 }
 
 void printUint32Binary(uint32_t num) {
