@@ -1088,9 +1088,7 @@ class TranspositionTables {
       int score = entry.score;
       if (entry.depth >= depth) {
         if (score > chessCache.evalWhiteWins || score < chessCache.evalWhiteLoss) {  // is mate
-          if (entry.depth >= depth) {
-            //return entry.score;
-          }
+          // none
         } else {
           return entry.score;
         }
@@ -2865,13 +2863,8 @@ class Board {
     // mobility scores
     uint8_t whitepop = whiteAtks.populationCount();
     uint8_t blackpop = blackAtks.populationCount();
-    if (fiftyMoveCounter > 4) {
-      eval += whitepop << 1;
-      eval -= blackpop << 1;
-    } else {
-      eval += whitepop;
-      eval -= blackpop;
-    }
+    eval += whitepop;
+    eval -= blackpop;
 
     // imbalance pieces scores
     // bishop pairs
@@ -3038,23 +3031,24 @@ class Board {
     if (turnIndex) { // white turn
       int maxEval = chessCache.evalNegativeInf;
       for (uint8_t i = 0; i < genMoves.amt; ++i) {
-        makeMove(genMoves.moves[i].move);
+        Move genMove = genMoves.moves[i].move;
+        makeMove(genMove);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0; // check extension
         if ((genMoves.moves[i].score < -10 || i > 20) && depth > 1 && extension == 0) { // late move reduction
             extension = -1;
         }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
-        unMakeMove(genMoves.moves[i].move);
+        unMakeMove(genMove);
         ++search_Nodes;
         if (score > maxEval) {
-          currentBestMove = genMoves.moves[i].move;
+          currentBestMove = genMove;
           if (plyFromRoot == 0) {
-            search_BestMove = genMoves.moves[i].move;
+            search_BestMove = genMove;
           }
           maxEval = score;
         }
         if (score >= beta) { // fail hard beta-cutoff
-          moveHHistory[1][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = depth*depth;
+          moveHHistory[1][genMove.moveFrom()][genMove.moveTo()] = depth * depth;
           return beta;
         }
         if (score > alpha) { // found new best move in this position
@@ -3066,23 +3060,24 @@ class Board {
     } else { // black turn
       int minEval = chessCache.evalPositiveInf;
       for (uint8_t i = 0; i < genMoves.amt; ++i) {
-        makeMove(genMoves.moves[i].move);
+        Move genMove = genMoves.moves[i].move;
+        makeMove(genMove);
         int extension = numExtensions < 8 && inCheck() ? 1 : 0; // check extension
         if ((genMoves.moves[i].score < -10 || i > 20) && depth > 1 && extension == 0) { // late move reduction
             extension = -1;
         }
         int score = alphaBeta(depth - 1 + extension, plyFromRoot + 1, alpha, beta, numExtensions + extension);
-        unMakeMove(genMoves.moves[i].move);
+        unMakeMove(genMove);
         ++search_Nodes;
         if (score < minEval) {
-          currentBestMove = genMoves.moves[i].move;
+          currentBestMove = genMove;
           if (plyFromRoot == 0) {
-            search_BestMove = genMoves.moves[i].move;
+            search_BestMove = genMove;
           }
           minEval = score;
         }
         if (score <= alpha) { // fail hard alpha-cutoff
-          moveHHistory[0][genMoves.moves[i].move.moveFrom()][genMoves.moves[i].move.moveTo()] = depth*depth;
+          moveHHistory[0][genMove.moveFrom()][genMove.moveTo()] = depth * depth;
           return alpha;
         }
         if (score < beta) { // found new best move in this position
