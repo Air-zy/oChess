@@ -63,21 +63,28 @@ SOURCES:
 
 =======================================*/
 
-#include <windows.h>  // for console visuals
-
-#include <algorithm>  // for move sorting
-#include <chrono>     // for timing
-#include <cstdint>    // For UINT64_MAX and var types
-#include <iostream>   //
-#include <random>     // for random uint64 numbers
-#include <string>     // string to int stoi()
-
+/*
 #include <WinNls.h>
 #include <consoleapi2.h>
 #include <processenv.h>
 #include <stdlib.h>
+#include <windows.h>  // for console visuals
 
+#include <algorithm>  // for move sorting
 #include <cctype>
+#include <chrono>    // for timing
+#include <cstdint>   // For UINT64_MAX and var types
+#include <iostream>  //
+#include <random>    // for random uint64 numbers
+#include <string>    // string to int stoi(
+*/
+
+#include <iostream>
+#include <random>
+#include <string>
+
+#include <chrono>
+#include <windows.h>
 
 void setTxtColor(int colorValue);
 void printUint32Binary(uint32_t num);
@@ -119,11 +126,32 @@ class BitBoard {
   inline bool isEmpty() const { return bitBoard == 0; };
 
   // Population count (Hamming weight) function
-  inline int populationCount() const { return __builtin_popcountll(bitBoard); }
+  inline int populationCount() const {
+    uint64_t x = bitBoard;  // copy bitboard for manipulation
+    x = x - ((x >> 1) & 0x5555555555555555ULL);  // step 1: divide and conquer
+                                                 // to sum 2 bits at a time
+    x = (x & 0x3333333333333333ULL) +
+        ((x >> 2) & 0x3333333333333333ULL);      // step 2: Sum groups of 4 bits
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL;  // step 3: sum groups of 8 bits
+    x = x + (x >> 8);   // step 4: Sum groups of 16 bits
+    x = x + (x >> 16);  // step 5: Sum groups of 32 bits
+    x = x + (x >> 32);  // step 6: Sum all bits in the 64-bit integer
+    return x & 0x7F;    // return only the least significant 7 bits (to handle
+                        // overflow)
+  }
 
   inline int populationCountBAND(uint64_t x2) const {
-    uint64_t x = bitBoard & x2;  // copy bitboard and band for manip
-    return __builtin_popcountll(x);
+    uint64_t x = (bitBoard & x2);  // copy bitboard and band for manip
+    x = x - ((x >> 1) & 0x5555555555555555ULL);  // step 1: divide and conquer
+                                                 // to sum 2 bits at a time
+    x = (x & 0x3333333333333333ULL) +
+        ((x >> 2) & 0x3333333333333333ULL);      // step 2: Sum groups of 4 bits
+    x = (x + (x >> 4)) & 0x0F0F0F0F0F0F0F0FULL;  // step 3: sum groups of 8 bits
+    x = x + (x >> 8);   // step 4: Sum groups of 16 bits
+    x = x + (x >> 16);  // step 5: Sum groups of 32 bits
+    x = x + (x >> 32);  // step 6: Sum all bits in the 64-bit integer
+    return x & 0x7F;    // return only the least significant 7 bits (to handle
+                        // overflow)
   }
 
   BitBoard(){};
@@ -3528,10 +3556,9 @@ void runAITest(Board &chessBoard) {
   std::cout << "\n\n- english Opening\n  eval: " << minMaxResult.eval;
   std::cout << "\n  nodes: " << minMaxResult.nodes;
 
-  chessBoard
-      .setupFen(
-          "rn1qk2r/p1p2ppp/bp2pn2/3p4/1bPP4/1P3NP1/P2BPPBP/RN1QK2R b KQkq - 3 "
-          "4");  // queens indian // + 0.2
+  chessBoard.setupFen(
+      "rn1qk2r/p1p2ppp/bp2pn2/3p4/1bPP4/1P3NP1/P2BPPBP/RN1QK2R b KQkq - 3 "
+      "4");  // queens indian // + 0.2
   if (chessBoard.turn == PIECES.WHITE) {
     minMaxResult = chessBoard.oSearch(6);
   } else {
